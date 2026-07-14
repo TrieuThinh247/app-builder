@@ -9,12 +9,92 @@ html, body, #root {
   width: 100%;
 }
 
+/* ---------------------------------------------------------------------------
+   Theme tokens
+   ---------------------------------------------------------------------- */
+
+:root, [data-theme="dark"] {
+  --bg-base:       #0f172a;
+  --bg-surface:    #1e293b;
+  --bg-surface2:   #2d3f55;
+  --border:        #334155;
+  --text-primary:  #f1f5f9;
+  --text-muted:    #94a3b8;
+  --text-faint:    #64748b;
+  --accent-blue:   #6366f1;
+  --accent-purple: #a855f7;
+  --hover-blue:    #1e3a5f;
+  --hover-purple:  #2e1a47;
+
+  /* editor-home (light surface inside dark shell) */
+  --eh-bg:         #f8fafc;
+  --eh-bg-header:  #ffffff;
+  --eh-bg-card:    #ffffff;
+  --eh-bg-thumb:   #f1f5f9;
+  --eh-border:     #e2e8f0;
+  --eh-text:       #1e293b;
+  --eh-text-muted: #64748b;
+  --eh-text-faint: #94a3b8;
+  --eh-new-border: #cbd5e1;
+  --eh-new-hover-bg: #f5f3ff;
+  --eh-back-hover: #f1f0ff;
+}
+
+[data-theme="dark"] {
+  --eh-bg:         #1e293b;
+  --eh-bg-header:  #0f172a;
+  --eh-bg-card:    #1e293b;
+  --eh-bg-thumb:   #0f172a;
+  --eh-border:     #334155;
+  --eh-text:       #f1f5f9;
+  --eh-text-muted: #94a3b8;
+  --eh-text-faint: #64748b;
+  --eh-new-border: #475569;
+  --eh-new-hover-bg: #1e3a5f;
+  --eh-back-hover: #1e3a5f;
+}
+
+[data-theme="light"] {
+  --bg-base:       #f1f5f9;
+  --bg-surface:    #ffffff;
+  --bg-surface2:   #e2e8f0;
+  --border:        #cbd5e1;
+  --text-primary:  #1e293b;
+  --text-muted:    #475569;
+  --text-faint:    #94a3b8;
+  --accent-blue:   #4f46e5;
+  --accent-purple: #9333ea;
+  --hover-blue:    #e0e7ff;
+  --hover-purple:  #f3e8ff;
+
+  --eh-bg:         #f8fafc;
+  --eh-bg-header:  #ffffff;
+  --eh-bg-card:    #ffffff;
+  --eh-bg-thumb:   #f1f5f9;
+  --eh-border:     #e2e8f0;
+  --eh-text:       #1e293b;
+  --eh-text-muted: #64748b;
+  --eh-text-faint: #94a3b8;
+  --eh-new-border: #cbd5e1;
+  --eh-new-hover-bg: #f5f3ff;
+  --eh-back-hover: #f1f0ff;
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   ---------------------------------------------------------------------- */
+
 body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  background: #0f172a;
-  color: #f1f5f9;
+  background: var(--bg-base);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
+  transition: background 0.2s, color 0.2s;
 }
+
+/* ---------------------------------------------------------------------------
+   Home root (checking / offline / online screens)
+   ---------------------------------------------------------------------- */
 
 .home-root {
   display: flex;
@@ -33,6 +113,12 @@ body {
   margin-bottom: 0.5rem;
 }
 
+.home-logo-image {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
 .home-logo-text {
   font-size: 2rem;
   font-weight: 700;
@@ -45,7 +131,7 @@ body {
 
 .home-subtitle {
   font-size: 1rem;
-  color: #94a3b8;
+  color: var(--text-muted);
   text-align: center;
 }
 
@@ -73,7 +159,7 @@ body {
 
 .home-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
 .home-btn:active {
@@ -81,25 +167,25 @@ body {
 }
 
 .home-btn-primary {
-  background: #1e293b;
-  border-color: #334155;
-  color: #f1f5f9;
+  background: var(--bg-surface);
+  border-color: var(--border);
+  color: var(--text-primary);
 }
 
 .home-btn-primary:hover {
-  background: #1e3a5f;
-  border-color: #6366f1;
+  background: var(--hover-blue);
+  border-color: var(--accent-blue);
 }
 
 .home-btn-secondary {
-  background: #1e293b;
-  border-color: #334155;
-  color: #f1f5f9;
+  background: var(--bg-surface);
+  border-color: var(--border);
+  color: var(--text-primary);
 }
 
 .home-btn-secondary:hover {
-  background: #2e1a47;
-  border-color: #a855f7;
+  background: var(--hover-purple);
+  border-color: var(--accent-purple);
 }
 
 .home-btn-icon {
@@ -121,7 +207,7 @@ body {
 
 .home-btn-desc {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .home-status {
@@ -129,102 +215,243 @@ body {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.9rem;
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 
 .home-status.offline {
   color: #f87171;
 }
 
-.home-lang-toggle {
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  padding: 0.3rem 0.7rem;
-  border-radius: 0.4rem;
-  border: 1px solid #334155;
-  background: #1e293b;
-  color: #94a3b8;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  letter-spacing: 0.05em;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.home-lang-toggle:hover {
-  background: #2d3f55;
-  border-color: #6366f1;
-  color: #f1f5f9;
-}
-
 .home-note {
   font-size: 0.8rem;
-  color: #64748b;
+  color: var(--text-faint);
   text-align: center;
 }
 
-/* -------------------------------------------------------------------------
-   Editor Home Screen (Google Docs-style launcher)
+/* ---------------------------------------------------------------------------
+   Settings gear button (fixed top-right)
+   ---------------------------------------------------------------------- */
+
+.home-settings-btn {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.home-settings-btn:hover {
+  background: var(--bg-surface2);
+  border-color: var(--accent-blue);
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------------------
+   Settings modal overlay
+   ---------------------------------------------------------------------- */
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.settings-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.settings-modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.settings-options {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.settings-option {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.settings-option:hover {
+  background: var(--bg-surface2);
+  color: var(--text-primary);
+}
+
+.settings-option.active {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: #fff;
+}
+
+.settings-modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.25rem;
+}
+
+.settings-btn-cancel {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.settings-btn-cancel:hover {
+  background: var(--bg-surface2);
+  color: var(--text-primary);
+}
+
+.settings-btn-apply {
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  border: none;
+  background: var(--accent-blue);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.settings-btn-apply:hover {
+  opacity: 0.88;
+}
+
+/* ---------------------------------------------------------------------------
+   Editor Home Screen
    ---------------------------------------------------------------------- */
 
 .editor-home-root {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #f8fafc;
-  color: #1e293b;
+  background: var(--eh-bg);
+  color: var(--eh-text);
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
 .editor-home-header {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.75rem 1.5rem;
-  background: #fff;
-  border-bottom: 1px solid #e2e8f0;
+  gap: 0.75rem;
+  padding: 0 1.25rem;
+  height: 48px;
+  background: var(--eh-bg-header);
+  border-bottom: 1px solid var(--eh-border);
   flex-shrink: 0;
 }
 
 .editor-home-back {
   background: none;
   border: none;
-  color: #6366f1;
-  font-size: 0.85rem;
+  color: var(--accent-blue);
+  font-size: 0.82rem;
   cursor: pointer;
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;
   transition: background 0.1s;
+  white-space: nowrap;
 }
 
 .editor-home-back:hover {
-  background: #f1f0ff;
+  background: var(--eh-back-hover);
 }
 
-.editor-home-title {
-  font-size: 1rem;
+.editor-home-brand {
+  font-size: 0.9rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--eh-text);
+  opacity: 0.5;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.editor-home-brand-logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.editor-home-settings {
+  position: static !important;
+  margin-left: auto;
 }
 
 .editor-home-body {
   flex: 1;
   overflow-y: auto;
   padding: 1.5rem 2rem 2rem;
+  max-width: 780px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.editor-home-section-header {
+  display: flex;
+  align-items: center;
+  margin: 1.75rem 0 0.6rem;
 }
 
 .editor-home-section-label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #64748b;
-  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--eh-text-muted);
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  margin-bottom: 0.75rem;
-}
-
-.editor-home-recent-label {
-  margin-top: 2rem;
 }
 
 /* New document card */
@@ -235,112 +462,102 @@ body {
 
 .editor-home-new-card {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  width: 110px;
-  height: 130px;
-  border: 2px dashed #cbd5e1;
-  border-radius: 0.5rem;
-  background: #fff;
-  color: #64748b;
-  font-size: 0.78rem;
+  gap: 0.65rem;
+  padding: 0.65rem 1.1rem;
+  border: 1.5px dashed var(--eh-new-border);
+  border-radius: 0.6rem;
+  background: var(--eh-bg-card);
+  color: var(--eh-text-muted);
+  font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 
 .editor-home-new-card:hover {
-  border-color: #6366f1;
-  background: #f5f3ff;
-  color: #6366f1;
+  border-color: var(--accent-blue);
+  background: var(--eh-new-hover-bg);
+  color: var(--accent-blue);
 }
 
 .editor-home-new-icon {
-  opacity: 0.5;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
 }
 
 .editor-home-new-card:hover .editor-home-new-icon {
   opacity: 1;
 }
 
-/* Recent files grid */
-.editor-home-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 1rem;
-}
-
-.editor-home-file-card {
-  position: relative;
+/* Recent files — list layout */
+.editor-home-list {
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  text-align: left;
-  padding: 0;
-  overflow: hidden;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  gap: 2px;
 }
 
-.editor-home-file-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  border-color: #6366f1;
-}
-
-.editor-home-file-thumb {
-  height: 110px;
-  background: #f1f5f9;
+.editor-home-list-item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-bottom: 1px solid #e2e8f0;
+  gap: 0.9rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.1s, border-color 0.1s;
+  color: var(--eh-text);
 }
 
-.editor-home-file-info {
+.editor-home-list-item:hover {
+  background: var(--eh-bg-card);
+  border-color: var(--eh-border);
+}
+
+.editor-home-list-item:hover .editor-home-list-name {
+  color: var(--accent-blue);
+}
+
+.editor-home-list-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.editor-home-list-info {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.6rem 0.75rem;
-  padding-right: 1.75rem;
+  gap: 0.15rem;
+  min-width: 0;
 }
 
-.editor-home-file-name {
-  font-size: 0.8rem;
+.editor-home-list-name {
+  font-size: 0.875rem;
   font-weight: 500;
-  color: #1e293b;
+  color: var(--eh-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.editor-home-file-date {
-  font-size: 0.7rem;
-  color: #94a3b8;
+.editor-home-list-path {
+  font-size: 0.72rem;
+  color: var(--eh-text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.editor-home-file-menu {
-  position: absolute;
-  bottom: 0.5rem;
-  right: 0.4rem;
-  background: none;
-  border: none;
-  color: #94a3b8;
-  cursor: pointer;
-  padding: 0.2rem;
-  border-radius: 0.25rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.1s, color 0.1s;
-}
-
-.editor-home-file-menu:hover {
-  background: #f1f5f9;
-  color: #475569;
+.editor-home-list-date {
+  font-size: 0.75rem;
+  color: var(--eh-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .editor-home-empty {
@@ -350,7 +567,7 @@ body {
   justify-content: center;
   gap: 0.75rem;
   padding: 3rem 1rem;
-  color: #94a3b8;
+  color: var(--eh-text-faint);
   font-size: 0.85rem;
 }
 

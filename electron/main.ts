@@ -10,6 +10,42 @@ import { serializeToDocx } from '../../extension/src/extension/DocxSerializer'
 import { DEFAULT_PAGE_SETTINGS } from '../../extension/src/shared/constants'
 
 // ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+interface AppSettings {
+  language: 'vi' | 'en'
+  theme: 'dark' | 'light'
+}
+
+const DEFAULT_SETTINGS: AppSettings = { language: 'vi', theme: 'dark' }
+
+function getSettingsPath(): string {
+  return path.join(app.getPath('userData'), 'settings.json')
+}
+
+function loadSettings(): AppSettings {
+  try {
+    const raw = fsSync.readFileSync(getSettingsPath(), 'utf-8')
+    const parsed = JSON.parse(raw) as Partial<AppSettings>
+    return {
+      language: parsed.language === 'en' ? 'en' : 'vi',
+      theme: parsed.theme === 'light' ? 'light' : 'dark',
+    }
+  } catch {
+    return { ...DEFAULT_SETTINGS }
+  }
+}
+
+function saveSettings(settings: AppSettings): void {
+  try {
+    fsSync.writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2), 'utf-8')
+  } catch {
+    // ignore write errors
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Recent Files
 // ---------------------------------------------------------------------------
 
@@ -118,8 +154,11 @@ let pendingOpenFilePath: string | null = null
 /** File path to open when the first editor window is created */
 let pendingInitialFilePath: string | null = null
 
-/** Current UI language — toggled between 'vi' and 'en' */
-let currentLanguage: 'vi' | 'en' = 'vi'
+const _initialSettings = loadSettings()
+/** Current UI language */
+let currentLanguage: 'vi' | 'en' = _initialSettings.language
+/** Current UI theme */
+let currentTheme: 'dark' | 'light' = _initialSettings.theme
 
 // ---------------------------------------------------------------------------
 // Layout Helpers
@@ -199,6 +238,7 @@ function createHomeWindow(): void {
     void checkNetwork().then((online) => {
       homeWindow?.webContents.send('home-network-status', online)
       homeWindow?.webContents.send('home-language', currentLanguage)
+      homeWindow?.webContents.send('home-theme', currentTheme)
 
       // If offline, go straight to editor after brief delay so user sees the screen
       if (!online) {
@@ -329,11 +369,14 @@ function createEditorTab(filePath?: string): string {
   // Hide until activated
   view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
 
-  if (filePath) {
-    view.webContents.once('did-finish-load', () => {
+  view.webContents.once('did-finish-load', () => {
+    // Send current theme and language so editor starts with correct settings
+    view.webContents.send('host-message', { type: 'theme', payload: { theme: currentTheme } })
+    view.webContents.send('host-message', { type: 'language', payload: { language: currentLanguage } })
+    if (filePath) {
       void loadAndSendFileToTab(id, filePath)
-    })
-  }
+    }
+  })
 
   setActiveTab(id)
   return id
@@ -414,9 +457,11 @@ async function confirmUnsavedChangesForTab(tab: Tab): Promise<'save' | 'discard'
   if (!mainWindow || mainWindow.isDestroyed()) return 'discard'
   const { response } = await dialog.showMessageBox(mainWindow, {
     type: 'question',
-    title: 'Tài liệu chưa lưu',
-    message: `"${tab.title}" có thay đổi chưa lưu. Bạn có muốn lưu không?`,
-    buttons: ['Lưu', 'Không lưu', 'Hủy'],
+    title: currentLanguage === 'vi' ? 'Tài liệu chưa lưu' : 'Unsaved document',
+    message: currentLanguage === 'vi'
+      ? `"${tab.title}" có thay đổi chưa lưu. Bạn có muốn lưu không?`
+      : `"${tab.title}" has unsaved changes. Do you want to save?`,
+    buttons: currentLanguage === 'vi' ? ['Lưu', 'Không lưu', 'Hủy'] : ['Save', 'Don\'t save', 'Cancel'],
     defaultId: 0,
     cancelId: 2,
   })
@@ -799,6 +844,33 @@ function registerIpcHandlers(): void {
     return loadRecentFiles()
   })
 
+  ipcMain.handle('get-settings', () => {
+    return { language: currentLanguage, theme: currentTheme }
+  })
+
+  ipcMain.on('apply-settings', (_event, settings: { language: 'vi' | 'en'; theme: 'dark' | 'light' }) => {
+    currentLanguage = settings.language
+    currentTheme = settings.theme
+    saveSettings({ language: currentLanguage, theme: currentTheme })
+
+    // Broadcast language to all surfaces
+    if (homeWindow && !homeWindow.isDestroyed()) {
+      homeWindow.webContents.send('home-language', currentLanguage)
+      homeWindow.webContents.send('home-theme', currentTheme)
+    }
+    for (const t of tabs.values()) {
+      if (!t.view.webContents.isDestroyed()) {
+        t.view.webContents.send('host-message', { type: 'language', payload: { language: currentLanguage } })
+        t.view.webContents.send('host-message', { type: 'theme', payload: { theme: currentTheme } })
+      }
+    }
+    if (tabBarView && !tabBarView.webContents.isDestroyed()) {
+      tabBarView.webContents.send('tab-bar-language', currentLanguage)
+      tabBarView.webContents.send('tab-bar-theme', currentTheme)
+    }
+    createAppMenu()
+  })
+
   ipcMain.on('home-action', (_event, message: { type: string; filePath?: string }) => {
     if (message.type === 'open-editor') {
       openEditorFromHome(message.filePath)
@@ -841,9 +913,9 @@ function registerIpcHandlers(): void {
     } else {
       pushTabState()
     }
-    // Send current language so tab bar renders in the right locale from startup
     if (tabBarView && !tabBarView.webContents.isDestroyed()) {
       tabBarView.webContents.send('tab-bar-language', currentLanguage)
+      tabBarView.webContents.send('tab-bar-theme', currentTheme)
     }
   })
 
@@ -898,9 +970,13 @@ async function showOpenFileDialog(): Promise<void> {
 
   const { response } = await dialog.showMessageBox(mainWindow, {
     type: 'question',
-    title: 'Mở file',
-    message: `Mở "${path.basename(filePath)}" trong:`,
-    buttons: ['Tab mới', 'Thay thế tab hiện tại', 'Hủy'],
+    title: currentLanguage === 'vi' ? 'Mở file' : 'Open file',
+    message: currentLanguage === 'vi'
+      ? `Mở "${path.basename(filePath)}" trong:`
+      : `Open "${path.basename(filePath)}" in:`,
+    buttons: currentLanguage === 'vi'
+      ? ['Tab mới', 'Thay thế tab hiện tại', 'Hủy']
+      : ['New tab', 'Replace current tab', 'Cancel'],
     defaultId: 0,
     cancelId: 2,
   })

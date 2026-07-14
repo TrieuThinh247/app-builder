@@ -78,6 +78,10 @@
     applyLanguage()
   })
 
+  window.tabBarApi.onTheme((newTheme) => {
+    document.documentElement.setAttribute('data-theme', newTheme)
+  })
+
   function renderTabs(tabs) {
     tabsEl.innerHTML = ''
     for (const tab of tabs) {

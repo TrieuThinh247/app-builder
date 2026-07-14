@@ -19,8 +19,14 @@ contextBridge.exposeInMainWorld('homeApi', {
   onLanguage: (cb: (lang: string) => void) => {
     ipcRenderer.on('home-language', (_event, lang: string) => cb(lang))
   },
-  toggleLanguage: () => {
-    ipcRenderer.send('home-action', { type: 'toggle-language' })
+  onTheme: (cb: (theme: string) => void) => {
+    ipcRenderer.on('home-theme', (_event, theme: string) => cb(theme))
+  },
+  getSettings: (): Promise<{ language: 'vi' | 'en'; theme: 'dark' | 'light' }> => {
+    return ipcRenderer.invoke('get-settings')
+  },
+  applySettings: (settings: { language: 'vi' | 'en'; theme: 'dark' | 'light' }) => {
+    ipcRenderer.send('apply-settings', settings)
   },
   getRecentFiles: (): Promise<Array<{ filePath: string; title: string; lastOpenedAt: string }>> => {
     return ipcRenderer.invoke('get-recent-files')

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react'
-import { FileText, Globe, WifiOff, Loader, Plus, Clock, MoreVertical } from 'lucide-react'
+import { FileText, Globe, WifiOff, Loader, Plus, Clock, Settings, Moon, Sun } from 'lucide-react'
+import logoUrl from '../logo/logo_final.png'
 
 type Screen = 'checking' | 'offline' | 'online' | 'editor-home'
 type Lang = 'vi' | 'en'
+type Theme = 'dark' | 'light'
 
 interface RecentFile {
   filePath: string
@@ -19,7 +21,9 @@ declare global {
       openEditorWithFile: (filePath: string) => void
       openAtlasWeb: () => void
       onLanguage: (cb: (lang: string) => void) => void
-      toggleLanguage: () => void
+      onTheme: (cb: (theme: string) => void) => void
+      getSettings: () => Promise<{ language: Lang; theme: Theme }>
+      applySettings: (settings: { language: Lang; theme: Theme }) => void
       getRecentFiles: () => Promise<RecentFile[]>
     }
   }
@@ -35,12 +39,17 @@ const STRINGS = {
     atlasTitle: 'Atlas Web',
     atlasDesc: 'Sử dụng AI tại atlas.leandix.com',
     offlineNote: 'Chế độ offline chỉ hỗ trợ chỉnh sửa văn bản.',
-    toggleLang: 'EN',
     newDoc: 'Tài liệu trống',
     recentDocs: 'Tài liệu gần đây',
     noRecent: 'Chưa có tài liệu nào được mở gần đây.',
-    openFile: 'Đã mở',
     back: '← Trang chủ',
+    settings: 'Cài đặt',
+    settingsTheme: 'Giao diện',
+    settingsDark: 'Tối',
+    settingsLight: 'Sáng',
+    settingsLang: 'Ngôn ngữ',
+    settingsApply: 'Áp dụng',
+    settingsCancel: 'Hủy',
   },
   en: {
     checking: 'Checking connection...',
@@ -51,12 +60,17 @@ const STRINGS = {
     atlasTitle: 'Atlas Web',
     atlasDesc: 'Use AI at atlas.leandix.com',
     offlineNote: 'Offline mode supports text editing only.',
-    toggleLang: 'VI',
     newDoc: 'Blank document',
     recentDocs: 'Recent documents',
     noRecent: 'No documents opened recently.',
-    openFile: 'Opened',
     back: '← Home',
+    settings: 'Settings',
+    settingsTheme: 'Theme',
+    settingsDark: 'Dark',
+    settingsLight: 'Light',
+    settingsLang: 'Language',
+    settingsApply: 'Apply',
+    settingsCancel: 'Cancel',
   },
 }
 
@@ -93,7 +107,91 @@ function DocIcon() {
   )
 }
 
-function EditorHomeScreen({ lang, s, onBack }: { lang: Lang; s: typeof STRINGS['vi']; onBack: () => void }) {
+interface SettingsModalProps {
+  lang: Lang
+  theme: Theme
+  onClose: () => void
+  onApply: (lang: Lang, theme: Theme) => void
+}
+
+function SettingsModal({ lang, theme, onClose, onApply }: SettingsModalProps) {
+  const [draftLang, setDraftLang] = useState<Lang>(lang)
+  const [draftTheme, setDraftTheme] = useState<Theme>(theme)
+  const s = STRINGS[lang]
+
+  function handleApply() {
+    onApply(draftLang, draftTheme)
+  }
+
+  function handleOverlayClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.target === e.currentTarget) onClose()
+  }
+
+  return (
+    <div className="settings-overlay" onClick={handleOverlayClick}>
+      <div className="settings-modal">
+        <div className="settings-modal-title">{s.settings}</div>
+
+        <div className="settings-group">
+          <div className="settings-label">{s.settingsTheme}</div>
+          <div className="settings-options">
+            <button
+              className={`settings-option${draftTheme === 'dark' ? ' active' : ''}`}
+              onClick={() => setDraftTheme('dark')}
+            >
+              <Moon size={13} style={{ marginRight: '0.35rem', verticalAlign: 'middle' }} />
+              {s.settingsDark}
+            </button>
+            <button
+              className={`settings-option${draftTheme === 'light' ? ' active' : ''}`}
+              onClick={() => setDraftTheme('light')}
+            >
+              <Sun size={13} style={{ marginRight: '0.35rem', verticalAlign: 'middle' }} />
+              {s.settingsLight}
+            </button>
+          </div>
+        </div>
+
+        <div className="settings-group">
+          <div className="settings-label">{s.settingsLang}</div>
+          <div className="settings-options">
+            <button
+              className={`settings-option${draftLang === 'vi' ? ' active' : ''}`}
+              onClick={() => setDraftLang('vi')}
+            >
+              <span style={{ fontWeight: 700, marginRight: '0.35rem' }}>VI</span>Tiếng Việt
+            </button>
+            <button
+              className={`settings-option${draftLang === 'en' ? ' active' : ''}`}
+              onClick={() => setDraftLang('en')}
+            >
+              <span style={{ fontWeight: 700, marginRight: '0.35rem' }}>EN</span>English
+            </button>
+          </div>
+        </div>
+
+        <div className="settings-modal-actions">
+          <button className="settings-btn-cancel" onClick={onClose}>{s.settingsCancel}</button>
+          <button className="settings-btn-apply" onClick={handleApply}>{s.settingsApply}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EditorHomeScreen({
+  lang,
+  theme,
+  s,
+  onBack,
+  onOpenSettings,
+}: {
+  lang: Lang
+  theme: Theme
+  s: typeof STRINGS['vi']
+  onBack: () => void
+  onOpenSettings: () => void
+}) {
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -105,51 +203,58 @@ function EditorHomeScreen({ lang, s, onBack }: { lang: Lang; s: typeof STRINGS['
   }, [])
 
   return (
-    <div className="editor-home-root">
+    <div className="editor-home-root" data-theme={theme}>
       <div className="editor-home-header">
         <button className="editor-home-back" onClick={onBack}>{s.back}</button>
+        <span className="editor-home-brand">
+          <img src={logoUrl} alt="Leandix Atlas" className="editor-home-brand-logo" />
+          Leandix Atlas
+        </span>
+        <button className="home-settings-btn editor-home-settings" onClick={onOpenSettings} title={s.settings}>
+          <Settings size={15} />
+        </button>
       </div>
 
       <div className="editor-home-body">
-        {/* New document row */}
-        <div className="editor-home-section-label">{lang === 'vi' ? 'Bắt đầu tài liệu mới' : 'Start a new document'}</div>
+        {/* New document */}
         <div className="editor-home-new-row">
           <button className="editor-home-new-card" onClick={() => window.homeApi.openEditorNew()}>
-            <div className="editor-home-new-icon"><Plus size={32} strokeWidth={1.5} /></div>
+            <div className="editor-home-new-icon"><Plus size={22} strokeWidth={1.5} /></div>
             <span>{s.newDoc}</span>
           </button>
         </div>
 
         {/* Recent files */}
-        <div className="editor-home-section-label editor-home-recent-label">
-          {s.recentDocs}
+        <div className="editor-home-section-header">
+          <span className="editor-home-section-label">{s.recentDocs}</span>
         </div>
 
         {loading ? (
           <div className="editor-home-empty"><Loader size={18} className="home-spin" /></div>
         ) : recentFiles.length === 0 ? (
           <div className="editor-home-empty">
-            <Clock size={32} strokeWidth={1} opacity={0.3} />
+            <Clock size={28} strokeWidth={1} opacity={0.3} />
             <span>{s.noRecent}</span>
           </div>
         ) : (
-          <div className="editor-home-grid">
+          <div className="editor-home-list">
             {recentFiles.map((file) => (
               <button
                 key={file.filePath}
-                className="editor-home-file-card"
+                className="editor-home-list-item"
                 onClick={() => window.homeApi.openEditorWithFile(file.filePath)}
                 title={file.filePath}
               >
-                <div className="editor-home-file-thumb">
+                <div className="editor-home-list-icon">
                   <DocIcon />
                 </div>
-                <div className="editor-home-file-info">
-                  <span className="editor-home-file-name">{file.title}</span>
-                  <span className="editor-home-file-date">
-                    {formatRelativeDate(file.lastOpenedAt, lang)}
-                  </span>
+                <div className="editor-home-list-info">
+                  <span className="editor-home-list-name">{file.title}</span>
+                  <span className="editor-home-list-path">{file.filePath}</span>
                 </div>
+                <span className="editor-home-list-date">
+                  {formatRelativeDate(file.lastOpenedAt, lang)}
+                </span>
               </button>
             ))}
           </div>
@@ -162,29 +267,67 @@ function EditorHomeScreen({ lang, s, onBack }: { lang: Lang; s: typeof STRINGS['
 export default function HomeApp() {
   const [screen, setScreen] = useState<Screen>('checking')
   const [lang, setLang] = useState<Lang>('vi')
+  const [theme, setTheme] = useState<Theme>('dark')
+  const [showSettings, setShowSettings] = useState(false)
 
   const s = STRINGS[lang]
 
+  // Apply theme to <html> so CSS variables take effect globally
   useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
+
+  useEffect(() => {
+    // Load persisted settings on mount
+    window.homeApi.getSettings().then((settings) => {
+      setLang(settings.language)
+      setTheme(settings.theme)
+    }).catch(() => {})
+
     window.homeApi.onNetworkStatus((online) => {
       setScreen(online ? 'online' : 'offline')
     })
     window.homeApi.onLanguage((l) => {
       if (l === 'vi' || l === 'en') setLang(l)
     })
+    window.homeApi.onTheme((t) => {
+      if (t === 'dark' || t === 'light') setTheme(t)
+    })
   }, [])
 
-  const langToggle = (
-    <button className="home-lang-toggle" onClick={() => window.homeApi.toggleLanguage()} title="Toggle language">
-      {s.toggleLang}
+  function handleApplySettings(newLang: Lang, newTheme: Theme) {
+    setLang(newLang)
+    setTheme(newTheme)
+    window.homeApi.applySettings({ language: newLang, theme: newTheme })
+    setShowSettings(false)
+  }
+
+  const settingsBtn = (
+    <button className="home-settings-btn" onClick={() => setShowSettings(true)} title={s.settings}>
+      <Settings size={15} />
     </button>
   )
+
+  const settingsModal = showSettings ? (
+    <SettingsModal
+      lang={lang}
+      theme={theme}
+      onClose={() => setShowSettings(false)}
+      onApply={handleApplySettings}
+    />
+  ) : null
 
   if (screen === 'editor-home') {
     return (
       <>
-        {langToggle}
-        <EditorHomeScreen lang={lang} s={s} onBack={() => setScreen('online')} />
+        {settingsModal}
+        <EditorHomeScreen
+          lang={lang}
+          theme={theme}
+          s={s}
+          onBack={() => setScreen('online')}
+          onOpenSettings={() => setShowSettings(true)}
+        />
       </>
     )
   }
@@ -192,8 +335,10 @@ export default function HomeApp() {
   if (screen === 'checking') {
     return (
       <div className="home-root">
-        {langToggle}
+        {settingsBtn}
+        {settingsModal}
         <div className="home-logo">
+          <img src={logoUrl} alt="" className="home-logo-image" />
           <span className="home-logo-text">Leandix Atlas</span>
         </div>
         <div className="home-status">
@@ -207,8 +352,10 @@ export default function HomeApp() {
   if (screen === 'offline') {
     return (
       <div className="home-root">
-        {langToggle}
+        {settingsBtn}
+        {settingsModal}
         <div className="home-logo">
+          <img src={logoUrl} alt="" className="home-logo-image" />
           <span className="home-logo-text">Leandix Atlas</span>
         </div>
         <div className="home-status offline">
@@ -231,8 +378,10 @@ export default function HomeApp() {
 
   return (
     <div className="home-root">
-      {langToggle}
+      {settingsBtn}
+      {settingsModal}
       <div className="home-logo">
+        <img src={logoUrl} alt="" className="home-logo-image" />
         <span className="home-logo-text">Leandix Atlas</span>
       </div>
       <p className="home-subtitle">{s.subtitle}</p>

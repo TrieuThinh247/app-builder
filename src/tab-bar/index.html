@@ -6,16 +6,51 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root, [data-theme="dark"] {
+      --tb-bg:        #1e1e1e;
+      --tb-tab-bg:    #2d2d2d;
+      --tb-tab-hover: #323232;
+      --tb-border:    #111;
+      --tb-text:      #ccc;
+      --tb-text-dim:  #999;
+      --tb-text-off:  #666;
+      --tb-active-bg: #1e1e1e;
+      --tb-accent:    #007acc;
+      --tb-overlay-bg:#252526;
+      --tb-overlay-br:#3c3c3c;
+      --tb-btn-bg:    #3c3c3c;
+      --tb-btn-hover: #4c4c4c;
+      --tb-close-hover:#555;
+    }
+
+    [data-theme="light"] {
+      --tb-bg:        #f3f4f6;
+      --tb-tab-bg:    #e5e7eb;
+      --tb-tab-hover: #dde1e7;
+      --tb-border:    #d1d5db;
+      --tb-text:      #374151;
+      --tb-text-dim:  #6b7280;
+      --tb-text-off:  #9ca3af;
+      --tb-active-bg: #ffffff;
+      --tb-accent:    #4f46e5;
+      --tb-overlay-bg:#ffffff;
+      --tb-overlay-br:#e5e7eb;
+      --tb-btn-bg:    #e5e7eb;
+      --tb-btn-hover: #d1d5db;
+      --tb-close-hover:#d1d5db;
+    }
+
     body {
       height: 36px;
-      background: #1e1e1e;
+      background: var(--tb-bg);
       display: flex;
       align-items: stretch;
       overflow: hidden;
       user-select: none;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 12px;
-      color: #ccc;
+      color: var(--tb-text);
+      transition: background 0.2s, color 0.2s;
     }
 
     #tabs {
@@ -35,15 +70,15 @@
       min-width: 100px;
       max-width: 200px;
       height: 36px;
-      background: #2d2d2d;
-      border-right: 1px solid #111;
+      background: var(--tb-tab-bg);
+      border-right: 1px solid var(--tb-border);
       cursor: pointer;
-      color: #999;
+      color: var(--tb-text-dim);
       flex-shrink: 0;
       position: relative;
     }
-    .tab:hover { background: #323232; color: #ccc; }
-    .tab.active { background: #1e1e1e; color: #fff; border-top: 1px solid #007acc; }
+    .tab:hover { background: var(--tb-tab-hover); color: var(--tb-text); }
+    .tab.active { background: var(--tb-active-bg); color: var(--tb-text); border-top: 2px solid var(--tb-accent); }
 
     .tab-icon { font-size: 10px; opacity: 0.6; flex-shrink: 0; }
     .tab-title {
@@ -68,11 +103,11 @@
       flex-shrink: 0;
       opacity: 0;
       font-size: 14px;
-      color: #999;
+      color: var(--tb-text-dim);
     }
     .tab:hover .tab-close,
     .tab.active .tab-close { opacity: 1; }
-    .tab-close:hover { background: #555; color: #fff; }
+    .tab-close:hover { background: var(--tb-close-hover); color: var(--tb-text); }
 
     #new-tab-btn {
       width: 36px;
@@ -81,11 +116,11 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      color: #666;
+      color: var(--tb-text-off);
       font-size: 18px;
       flex-shrink: 0;
     }
-    #new-tab-btn:hover { color: #ccc; background: #2d2d2d; }
+    #new-tab-btn:hover { color: var(--tb-text); background: var(--tb-tab-bg); }
 
     /* Open mode prompt overlay */
     #open-mode-overlay {
@@ -94,14 +129,14 @@
       top: 36px;
       left: 0;
       right: 0;
-      background: #252526;
-      border-bottom: 1px solid #3c3c3c;
+      background: var(--tb-overlay-bg);
+      border-bottom: 1px solid var(--tb-overlay-br);
       padding: 8px 12px;
       align-items: center;
       gap: 8px;
       z-index: 100;
       font-size: 12px;
-      color: #ccc;
+      color: var(--tb-text);
     }
     #open-mode-overlay.visible { display: flex; }
     #open-mode-overlay span { flex: 1; }
@@ -109,15 +144,15 @@
     .prompt-btn {
       padding: 3px 10px;
       border-radius: 3px;
-      border: 1px solid #555;
-      background: #3c3c3c;
-      color: #ccc;
+      border: 1px solid var(--tb-overlay-br);
+      background: var(--tb-btn-bg);
+      color: var(--tb-text);
       cursor: pointer;
       font-size: 11px;
     }
-    .prompt-btn:hover { background: #4c4c4c; }
-    .prompt-btn.primary { background: #007acc; border-color: #007acc; color: #fff; }
-    .prompt-btn.primary:hover { background: #1a8ad4; }
+    .prompt-btn:hover { background: var(--tb-btn-hover); }
+    .prompt-btn.primary { background: var(--tb-accent); border-color: var(--tb-accent); color: #fff; }
+    .prompt-btn.primary:hover { opacity: 0.88; }
   </style>
 </head>
 <body>
