@@ -1,0 +1,29 @@
+{
+  "appId": "com.leandix.atlas",
+  "productName": "Leandix Atlas",
+  "directories": {
+    "output": "dist"
+  },
+  "extraMetadata": {
+    "main": "out/electron/main.js"
+  },
+  "files": [
+    "out/electron/**/*",
+    "out/webview/**/*",
+    "out/pdf-webview/**/*",
+    "out/home-webview/**/*",
+    "out/pdfjs/**/*"
+  ],
+  "win": {
+    "target": "nsis",
+    "icon": "../extension/media/leandix-icon.png"
+  },
+  "mac": {
+    "target": "dmg",
+    "icon": "../extension/media/leandix-icon.png"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}

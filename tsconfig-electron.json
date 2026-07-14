@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "lib": ["ES2022"],
+    "outDir": "./out/electron",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": true,
+    "paths": {
+      "../../extension/src/extension/*": ["../extension/src/extension/*"],
+      "../../extension/src/shared/*": ["../extension/src/shared/*"]
+    }
+  },
+  "include": [
+    "electron/**/*",
+    "../extension/src/extension/**/*",
+    "../extension/src/shared/**/*"
+  ],
+  "exclude": ["node_modules", "out", "../extension/src/webview"]
+}
