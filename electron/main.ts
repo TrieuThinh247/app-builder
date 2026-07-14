@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
+import { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs/promises'
 import * as fsSync from 'fs'
@@ -10,53 +10,112 @@ import { serializeToDocx } from '../../extension/src/extension/DocxSerializer'
 import { DEFAULT_PAGE_SETTINGS } from '../../extension/src/shared/constants'
 
 // ---------------------------------------------------------------------------
-// In-memory Document State
+// Types
 // ---------------------------------------------------------------------------
 
-interface DocumentState {
-  /** Absolute path of the currently open file, or null for an unsaved new document. */
-  currentFilePath: string | null
-  /** Latest body HTML received from the renderer. */
-  fileContentHtml: string
-  /** Latest header/footer/comments/page-settings received from the renderer. */
-  fileExtras: {
-    headerHtml?: string
-    footerHtml?: string
-    comments?: Array<{
-      id: string
-      author: string
-      date: string
-      text: string
-      rangeStart: number
-      rangeEnd: number
-      replies?: Array<{ id: string; author: string; date: string; text: string }>
-    }>
-    pageSettings?: typeof DEFAULT_PAGE_SETTINGS
-    defaultFont?: string
-    defaultFontSize?: number
-  }
+type Comment = {
+  id: string
+  author: string
+  date: string
+  text: string
+  rangeStart: number
+  rangeEnd: number
+  replies?: Array<{ id: string; author: string; date: string; text: string }>
 }
+
+type FileExtras = {
+  headerHtml?: string
+  footerHtml?: string
+  comments?: Comment[]
+  pageSettings?: typeof DEFAULT_PAGE_SETTINGS
+  defaultFont?: string
+  defaultFontSize?: number
+}
+
+interface TabDocumentState {
+  currentFilePath: string | null
+  fileContentHtml: string
+  fileExtras: FileExtras
+}
+
+interface Tab {
+  id: string
+  type: 'editor' | 'pdf'
+  title: string
+  documentState: TabDocumentState
+  isDirty: boolean
+  view: WebContentsView
+}
+
+interface TabStateSnapshot {
+  id: string
+  title: string
+  type: 'editor' | 'pdf'
+  isDirty: boolean
+  isActive: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Globals
+// ---------------------------------------------------------------------------
 
 let homeWindow: BrowserWindow | null = null
 let mainWindow: BrowserWindow | null = null
 let atlasWindow: BrowserWindow | null = null
 
-/** Track PDF viewer windows so we can manage them */
-let pdfWindows: BrowserWindow[] = []
-/** Map PDF window IDs to their file paths */
-const pdfWindowFilePaths = new Map<number, string>()
+const tabs = new Map<string, Tab>()
+let activeTabId: string | null = null
+let tabBarView: WebContentsView | null = null
 
-let documentState: DocumentState = {
-  currentFilePath: null,
-  fileContentHtml: '',
-  fileExtras: {},
-}
+/** Path waiting for new/replace decision from user */
+let pendingOpenFilePath: string | null = null
 
 /** Current UI language — toggled between 'vi' and 'en' */
 let currentLanguage: 'vi' | 'en' = 'vi'
 
-/** Track whether the document has unsaved changes */
-let isDocumentDirty = false
+// ---------------------------------------------------------------------------
+// Layout Helpers
+// ---------------------------------------------------------------------------
+
+const TAB_BAR_HEIGHT = 36
+
+function getTabBarBounds(win: BrowserWindow): { x: number; y: number; width: number; height: number } {
+  const [width] = win.getContentSize()
+  return { x: 0, y: 0, width, height: TAB_BAR_HEIGHT }
+}
+
+function getContentBounds(win: BrowserWindow): { x: number; y: number; width: number; height: number } {
+  const [width, height] = win.getContentSize()
+  return { x: 0, y: TAB_BAR_HEIGHT, width, height: Math.max(0, height - TAB_BAR_HEIGHT) }
+}
+
+function updateLayout(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (tabBarView) tabBarView.setBounds(getTabBarBounds(mainWindow))
+  if (activeTabId) {
+    const tab = tabs.get(activeTabId)
+    if (tab) tab.view.setBounds(getContentBounds(mainWindow))
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab State
+// ---------------------------------------------------------------------------
+
+function pushTabState(): void {
+  if (!tabBarView || tabBarView.webContents.isDestroyed()) return
+  const snapshots: TabStateSnapshot[] = []
+  for (const tab of tabs.values()) {
+    snapshots.push({
+      id: tab.id,
+      title: tab.title,
+      type: tab.type,
+      isDirty: tab.isDirty,
+      isActive: tab.id === activeTabId,
+    })
+  }
+  tabBarView.webContents.send('tab-state', snapshots)
+}
 
 // ---------------------------------------------------------------------------
 // Window Creation
@@ -139,6 +198,45 @@ function openAtlasWebWindow(): void {
   atlasWindow.loadURL('https://atlas.leandix.com')
   atlasWindow.setMenuBarVisibility(false)
 
+  const atlasMenu = Menu.buildFromTemplate([
+    {
+      label: 'Điều hướng',
+      submenu: [
+        {
+          label: 'Trang chủ',
+          accelerator: 'CmdOrCtrl+Shift+H',
+          click: () => {
+            if (homeWindow && !homeWindow.isDestroyed()) {
+              homeWindow.show()
+              homeWindow.focus()
+            } else {
+              createHomeWindow()
+            }
+          },
+        },
+        {
+          label: 'Mở Editor',
+          accelerator: 'CmdOrCtrl+Shift+E',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.show()
+              mainWindow.focus()
+            } else {
+              createWindow()
+            }
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Thoát',
+          role: 'quit',
+        },
+      ],
+    },
+  ])
+  atlasWindow.setMenu(atlasMenu)
+  atlasWindow.setMenuBarVisibility(true)
+
   atlasWindow.on('closed', () => {
     atlasWindow = null
   })
@@ -146,12 +244,124 @@ function openAtlasWebWindow(): void {
   homeWindow?.close()
 }
 
-async function confirmUnsavedChanges(): Promise<'save' | 'discard' | 'cancel'> {
+// ---------------------------------------------------------------------------
+// Tab Creation / Activation
+// ---------------------------------------------------------------------------
+
+function createEditorTab(filePath?: string): string {
+  if (!mainWindow || mainWindow.isDestroyed()) return ''
+  const id = crypto.randomUUID()
+  const view = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  })
+  view.webContents.loadFile(path.join(__dirname, '..', 'webview', 'index.html'))
+
+  const tab: Tab = {
+    id,
+    type: 'editor',
+    title: filePath ? path.basename(filePath) : 'Tài liệu mới',
+    documentState: { currentFilePath: filePath ?? null, fileContentHtml: '', fileExtras: {} },
+    isDirty: false,
+    view,
+  }
+  tabs.set(id, tab)
+  mainWindow.contentView.addChildView(view)
+
+  // Hide until activated
+  view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
+
+  if (filePath) {
+    view.webContents.once('did-finish-load', () => {
+      void loadAndSendFileToTab(id, filePath)
+    })
+  }
+
+  setActiveTab(id)
+  return id
+}
+
+function createPdfTab(filePath: string): string {
+  if (!mainWindow || mainWindow.isDestroyed()) return ''
+  const id = crypto.randomUUID()
+
+  const pdfjsRoot = path.join(__dirname, '..', 'pdfjs')
+  const viewerHtmlPath = path.join(pdfjsRoot, 'web', 'viewer.html')
+  const buildBase = path.join(pdfjsRoot, 'build').replace(/\\/g, '/')
+  const pdfFileUrl = `file:///${filePath.replace(/\\/g, '/')}`
+  const workerSrc = `file:///${buildBase}/pdf.worker.mjs`
+  const sandboxSrc = `file:///${buildBase}/pdf.sandbox.mjs`
+
+  const view = new WebContentsView({
+    webPreferences: {
+      contextIsolation: false,
+      nodeIntegration: false,
+      sandbox: false,
+      webSecurity: false,
+    },
+  })
+  view.webContents.loadFile(viewerHtmlPath)
+
+  view.webContents.once('did-finish-load', () => {
+    view.webContents.executeJavaScript(`
+      if (typeof PDFViewerApplicationOptions !== 'undefined') {
+        PDFViewerApplicationOptions.set('defaultUrl', '${pdfFileUrl.replace(/'/g, "\\'")}');
+        PDFViewerApplicationOptions.set('workerSrc', '${workerSrc}');
+        PDFViewerApplicationOptions.set('sandboxBundleSrc', '${sandboxSrc}');
+        PDFViewerApplicationOptions.set('disablePreferences', true);
+        if (typeof PDFViewerApplication !== 'undefined' && PDFViewerApplication.open) {
+          PDFViewerApplication.open({ url: '${pdfFileUrl.replace(/'/g, "\\'")}' });
+        }
+      }
+    `).catch(console.error)
+  })
+
+  const tab: Tab = {
+    id,
+    type: 'pdf',
+    title: path.basename(filePath),
+    documentState: { currentFilePath: filePath, fileContentHtml: '', fileExtras: {} },
+    isDirty: false,
+    view,
+  }
+  tabs.set(id, tab)
+  mainWindow.contentView.addChildView(view)
+  view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
+
+  setActiveTab(id)
+  return id
+}
+
+function setActiveTab(id: string): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const tab = tabs.get(id)
+  if (!tab) return
+
+  // Hide previous active tab
+  if (activeTabId && activeTabId !== id) {
+    const prev = tabs.get(activeTabId)
+    if (prev) prev.view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
+  }
+
+  activeTabId = id
+  tab.view.setBounds(getContentBounds(mainWindow))
+  pushTabState()
+}
+
+// ---------------------------------------------------------------------------
+// Tab Close / Open Flow
+// ---------------------------------------------------------------------------
+
+async function confirmUnsavedChangesForTab(tab: Tab): Promise<'save' | 'discard' | 'cancel'> {
   if (!mainWindow || mainWindow.isDestroyed()) return 'discard'
   const { response } = await dialog.showMessageBox(mainWindow, {
     type: 'question',
     title: 'Tài liệu chưa lưu',
-    message: 'Tài liệu có thay đổi chưa lưu. Bạn có muốn lưu trước khi thoát không?',
+    message: `"${tab.title}" có thay đổi chưa lưu. Bạn có muốn lưu không?`,
     buttons: ['Lưu', 'Không lưu', 'Hủy'],
     defaultId: 0,
     cancelId: 2,
@@ -159,6 +369,299 @@ async function confirmUnsavedChanges(): Promise<'save' | 'discard' | 'cancel'> {
   if (response === 0) return 'save'
   if (response === 1) return 'discard'
   return 'cancel'
+}
+
+async function closeTab(tabId: string): Promise<void> {
+  const tab = tabs.get(tabId)
+  if (!tab) return
+
+  if (tab.isDirty) {
+    const action = await confirmUnsavedChangesForTab(tab)
+    if (action === 'cancel') return
+    if (action === 'save') await saveTabFile(tabId)
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.contentView.removeChildView(tab.view)
+  tab.view.webContents.close()
+  tabs.delete(tabId)
+
+  if (activeTabId === tabId) {
+    activeTabId = null
+    const remaining = [...tabs.keys()]
+    if (remaining.length > 0) {
+      setActiveTab(remaining[remaining.length - 1])
+    } else {
+      createEditorTab()
+    }
+  }
+
+  pushTabState()
+}
+
+async function openFileInTab(filePath: string, mode: 'new' | 'replace'): Promise<void> {
+  const ext = path.extname(filePath).toLowerCase()
+
+  if (mode === 'new') {
+    if (ext === '.pdf') {
+      createPdfTab(filePath)
+    } else {
+      createEditorTab(filePath)
+    }
+    return
+  }
+
+  // replace mode
+  if (!activeTabId) {
+    if (ext === '.pdf') createPdfTab(filePath)
+    else createEditorTab(filePath)
+    return
+  }
+
+  const activeTab = tabs.get(activeTabId)
+  if (!activeTab) return
+
+  if (activeTab.isDirty) {
+    const action = await confirmUnsavedChangesForTab(activeTab)
+    if (action === 'cancel') return
+    if (action === 'save') await saveTabFile(activeTabId)
+  }
+
+  if (ext === '.pdf') {
+    // Replace with a new pdf tab, remove old
+    const oldId = activeTabId
+    createPdfTab(filePath)
+    const old = tabs.get(oldId)
+    if (old && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.contentView.removeChildView(old.view)
+      old.view.webContents.close()
+      tabs.delete(oldId)
+    }
+  } else {
+    activeTab.title = path.basename(filePath)
+    activeTab.documentState.currentFilePath = filePath
+    activeTab.documentState.fileContentHtml = ''
+    activeTab.documentState.fileExtras = {}
+    activeTab.isDirty = false
+    pushTabState()
+    await loadAndSendFileToTab(activeTabId, filePath)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Per-tab File Loading / Saving / Message Handling
+// ---------------------------------------------------------------------------
+
+async function loadAndSendFileToTab(tabId: string, filePath: string): Promise<void> {
+  const tab = tabs.get(tabId)
+  if (!tab) return
+
+  try {
+    const buffer = await fs.readFile(filePath)
+    const parsed = await parseDocx(buffer as unknown as Buffer)
+
+    tab.documentState.currentFilePath = filePath
+    tab.documentState.fileContentHtml = parsed.bodyHtml
+    tab.documentState.fileExtras = {
+      headerHtml: parsed.headerHtml,
+      footerHtml: parsed.footerHtml,
+      comments: parsed.comments,
+      pageSettings: parsed.pageSettings || DEFAULT_PAGE_SETTINGS,
+      defaultFont: parsed.metadata?.defaultFont ?? undefined,
+      defaultFontSize: parsed.metadata?.defaultFontSize ?? undefined,
+    }
+
+    tab.view.webContents.send('host-message', {
+      type: 'load',
+      payload: {
+        html: parsed.bodyHtml,
+        headerHtml: parsed.headerHtml,
+        footerHtml: parsed.footerHtml,
+        comments: parsed.comments,
+        warnings: parsed.warnings,
+        pageSettings: parsed.pageSettings || DEFAULT_PAGE_SETTINGS,
+        language: currentLanguage,
+        metadata: {
+          defaultFont: parsed.metadata?.defaultFont ?? 'Times New Roman',
+          defaultFontSize: parsed.metadata?.defaultFontSize ?? 13,
+        },
+      },
+    })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    dialog.showErrorBox('Lỗi mở file', message)
+  }
+}
+
+async function saveTabFile(tabId: string): Promise<void> {
+  const tab = tabs.get(tabId)
+  if (!tab || !mainWindow || mainWindow.isDestroyed()) return
+
+  if (tab.documentState.currentFilePath === null) {
+    await saveTabFileAs(tabId)
+    return
+  }
+
+  try {
+    const { fileExtras } = tab.documentState
+    const buffer = await serializeToDocx(tab.documentState.fileContentHtml, {
+      headerHtml: fileExtras.headerHtml,
+      footerHtml: fileExtras.footerHtml,
+      comments: fileExtras.comments,
+      pageSettings: fileExtras.pageSettings,
+      defaultFont: fileExtras.defaultFont,
+      defaultFontSize: fileExtras.defaultFontSize,
+    })
+    await fs.writeFile(tab.documentState.currentFilePath, buffer)
+    tab.isDirty = false
+    tab.view.webContents.send('host-message', { type: 'saved', payload: {} })
+    pushTabState()
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    dialog.showErrorBox('Lỗi lưu file', message)
+  }
+}
+
+async function saveTabFileAs(tabId: string): Promise<void> {
+  const tab = tabs.get(tabId)
+  if (!tab || !mainWindow || mainWindow.isDestroyed()) return
+
+  const result = await dialog.showSaveDialog(mainWindow, {
+    filters: [{ name: 'Word Documents', extensions: ['docx'] }],
+  })
+  if (result.canceled || !result.filePath) return
+
+  try {
+    const { fileExtras } = tab.documentState
+    const buffer = await serializeToDocx(tab.documentState.fileContentHtml, {
+      headerHtml: fileExtras.headerHtml,
+      footerHtml: fileExtras.footerHtml,
+      comments: fileExtras.comments,
+      pageSettings: fileExtras.pageSettings,
+      defaultFont: fileExtras.defaultFont,
+      defaultFontSize: fileExtras.defaultFontSize,
+    })
+    await fs.writeFile(result.filePath, buffer)
+    tab.documentState.currentFilePath = result.filePath
+    tab.title = path.basename(result.filePath)
+    tab.isDirty = false
+    tab.view.webContents.send('host-message', { type: 'saved', payload: {} })
+    pushTabState()
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    dialog.showErrorBox('Lỗi lưu file', message)
+  }
+}
+
+async function handleVsCodeMessageForTab(tabId: string, message: unknown): Promise<void> {
+  const tab = tabs.get(tabId)
+  if (!tab) return
+  if (!message || typeof message !== 'object') return
+  const msg = message as { type?: unknown; payload?: unknown }
+  if (typeof msg.type !== 'string') return
+
+  switch (msg.type) {
+    case 'ready': {
+      if (tab.type === 'pdf') {
+        const fileUrl = `file:///${tab.documentState.currentFilePath!.replace(/\\/g, '/')}`
+        tab.view.webContents.send('host-message', { type: 'load-pdf-url', payload: { url: fileUrl } })
+        tab.view.webContents.send('host-message', { type: 'language', payload: { language: currentLanguage } })
+        break
+      }
+      if (tab.documentState.currentFilePath) {
+        await loadAndSendFileToTab(tabId, tab.documentState.currentFilePath)
+      } else {
+        tab.view.webContents.send('host-message', {
+          type: 'load',
+          payload: {
+            html: '',
+            warnings: [],
+            headerHtml: '',
+            footerHtml: '',
+            comments: [],
+            pageSettings: DEFAULT_PAGE_SETTINGS,
+            language: currentLanguage,
+            metadata: { defaultFont: 'Aptos', defaultFontSize: 12 },
+          },
+        })
+      }
+      break
+    }
+
+    case 'update': {
+      const payload = msg.payload as Record<string, unknown> | undefined
+      if (!payload || typeof payload !== 'object') return
+      if (
+        typeof payload.html !== 'string' ||
+        typeof payload.headerHtml !== 'string' ||
+        typeof payload.footerHtml !== 'string' ||
+        !Array.isArray(payload.comments) ||
+        !payload.pageSettings ||
+        typeof payload.pageSettings !== 'object'
+      ) return
+      tab.documentState.fileContentHtml = payload.html
+      tab.documentState.fileExtras = {
+        headerHtml: payload.headerHtml as string,
+        footerHtml: payload.footerHtml as string,
+        comments: payload.comments as Comment[],
+        pageSettings: payload.pageSettings as typeof DEFAULT_PAGE_SETTINGS,
+        defaultFont: typeof payload.defaultFont === 'string' ? payload.defaultFont : tab.documentState.fileExtras.defaultFont,
+        defaultFontSize: typeof payload.defaultFontSize === 'number' ? payload.defaultFontSize : tab.documentState.fileExtras.defaultFontSize,
+      }
+      break
+    }
+
+    case 'save': {
+      const payload = msg.payload as Record<string, unknown> | undefined
+      if (!payload || typeof payload !== 'object') return
+      if (
+        typeof payload.html !== 'string' ||
+        typeof payload.headerHtml !== 'string' ||
+        typeof payload.footerHtml !== 'string' ||
+        !Array.isArray(payload.comments) ||
+        !payload.pageSettings ||
+        typeof payload.pageSettings !== 'object'
+      ) return
+      tab.documentState.fileContentHtml = payload.html
+      tab.documentState.fileExtras = {
+        headerHtml: payload.headerHtml as string,
+        footerHtml: payload.footerHtml as string,
+        comments: payload.comments as Comment[],
+        pageSettings: payload.pageSettings as typeof DEFAULT_PAGE_SETTINGS,
+        defaultFont: typeof payload.defaultFont === 'string' ? payload.defaultFont : tab.documentState.fileExtras.defaultFont,
+        defaultFontSize: typeof payload.defaultFontSize === 'number' ? payload.defaultFontSize : tab.documentState.fileExtras.defaultFontSize,
+      }
+      await saveTabFile(tabId)
+      break
+    }
+
+    case 'requestLocalImage': {
+      await handleRequestLocalImage(tab.view.webContents)
+      break
+    }
+
+    case 'dirtyStateChanged': {
+      const payload = msg.payload as Record<string, unknown> | undefined
+      if (payload && typeof payload.isDirty === 'boolean') {
+        tab.isDirty = payload.isDirty
+        pushTabState()
+      }
+      break
+    }
+
+    case 'toggleLanguage': {
+      currentLanguage = currentLanguage === 'vi' ? 'en' : 'vi'
+      for (const t of tabs.values()) {
+        if (!t.view.webContents.isDestroyed()) {
+          t.view.webContents.send('host-message', { type: 'language', payload: { language: currentLanguage } })
+        }
+      }
+      break
+    }
+
+    default:
+      break
+  }
 }
 
 function createWindow(): void {
@@ -169,22 +672,38 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      preload: path.join(__dirname, 'preload.js'),
     },
   })
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'webview', 'index.html'))
+  // Set up tab bar view
+  tabBarView = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      preload: path.join(__dirname, 'tab-bar-preload.js'),
+    },
+  })
+  mainWindow.contentView.addChildView(tabBarView)
+  tabBarView.webContents.loadFile(path.join(__dirname, '..', 'tab-bar', 'index.html'))
+  tabBarView.setBounds(getTabBarBounds(mainWindow))
+
+  mainWindow.on('resize', updateLayout)
+
   createAppMenu()
 
   mainWindow.on('close', (event) => {
-    if (!isDocumentDirty) return
+    const dirtyTabs = [...tabs.values()].filter((t) => t.isDirty)
+    if (dirtyTabs.length === 0) return
     event.preventDefault()
-    void confirmUnsavedChanges().then(async (action) => {
-      if (action === 'cancel') return
-      if (action === 'save') await saveCurrentFile()
-      isDocumentDirty = false
+    void (async () => {
+      for (const tab of dirtyTabs) {
+        const action = await confirmUnsavedChangesForTab(tab)
+        if (action === 'cancel') return
+        if (action === 'save') await saveTabFile(tab.id)
+      }
       mainWindow?.destroy()
-    })
+    })()
   })
 
   mainWindow.on('closed', () => {
@@ -206,179 +725,42 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.on('vscode-message', (event, message) => {
-    if (mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents) {
-      void handleVsCodeMessage(message)
-      return
+    const tab = [...tabs.values()].find((t) => t.view.webContents === event.sender)
+    if (tab) {
+      void handleVsCodeMessageForTab(tab.id, message)
     }
+  })
 
-    const pdfWin = pdfWindows.find((w) => !w.isDestroyed() && w.webContents === event.sender)
-    if (pdfWin) {
-      void handlePdfWindowMessage(pdfWin, message)
+  ipcMain.on('tab-bar-ready', () => {
+    if (tabs.size === 0) createEditorTab()
+    else pushTabState()
+  })
+
+  ipcMain.on('tab-create', () => {
+    createEditorTab()
+  })
+
+  ipcMain.on('tab-close', (_event, { tabId }: { tabId: string }) => {
+    void closeTab(tabId)
+  })
+
+  ipcMain.on('tab-switch', (_event, { tabId }: { tabId: string }) => {
+    setActiveTab(tabId)
+  })
+
+  ipcMain.on('tab-open-mode', (_event, { mode }: { mode: 'new' | 'replace' }) => {
+    if (pendingOpenFilePath) {
+      const p = pendingOpenFilePath
+      pendingOpenFilePath = null
+      void openFileInTab(p, mode)
     }
   })
 }
 
-async function handleVsCodeMessage(message: unknown): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed()) return
-  if (!message || typeof message !== 'object') return
-  const msg = message as { type?: unknown; payload?: unknown }
-  if (typeof msg.type !== 'string') return
-
-  switch (msg.type) {
-    case 'ready': {
-      if (documentState.currentFilePath) {
-        await loadAndSendFile(documentState.currentFilePath)
-      } else {
-        mainWindow.webContents.send('host-message', {
-          type: 'load',
-          payload: {
-            html: '',
-            warnings: [],
-            headerHtml: '',
-            footerHtml: '',
-            comments: [],
-            pageSettings: DEFAULT_PAGE_SETTINGS,
-            language: currentLanguage,
-            metadata: { defaultFont: 'Aptos', defaultFontSize: 12 },
-          },
-        })
-      }
-      break
-    }
-
-    case 'update': {
-      const payload = msg.payload as Record<string, unknown> | undefined
-      if (!payload || typeof payload !== 'object') return
-      // Validate required fields before updating state
-      if (
-        typeof payload.html !== 'string' ||
-        typeof payload.headerHtml !== 'string' ||
-        typeof payload.footerHtml !== 'string' ||
-        !Array.isArray(payload.comments) ||
-        !payload.pageSettings ||
-        typeof payload.pageSettings !== 'object'
-      ) {
-        return
-      }
-      documentState.fileContentHtml = payload.html as string
-      documentState.fileExtras = {
-        headerHtml: payload.headerHtml as string,
-        footerHtml: payload.footerHtml as string,
-        comments: payload.comments as DocumentState['fileExtras']['comments'],
-        pageSettings: payload.pageSettings as typeof DEFAULT_PAGE_SETTINGS,
-        defaultFont: typeof payload.defaultFont === 'string' ? payload.defaultFont : documentState.fileExtras.defaultFont,
-        defaultFontSize: typeof payload.defaultFontSize === 'number' ? payload.defaultFontSize : documentState.fileExtras.defaultFontSize,
-      }
-      break
-    }
-
-    case 'save': {
-      const payload = msg.payload as Record<string, unknown> | undefined
-      if (!payload || typeof payload !== 'object') return
-      if (
-        typeof payload.html !== 'string' ||
-        typeof payload.headerHtml !== 'string' ||
-        typeof payload.footerHtml !== 'string' ||
-        !Array.isArray(payload.comments) ||
-        !payload.pageSettings ||
-        typeof payload.pageSettings !== 'object'
-      ) {
-        return
-      }
-      documentState.fileContentHtml = payload.html as string
-      documentState.fileExtras = {
-        headerHtml: payload.headerHtml as string,
-        footerHtml: payload.footerHtml as string,
-        comments: payload.comments as DocumentState['fileExtras']['comments'],
-        pageSettings: payload.pageSettings as typeof DEFAULT_PAGE_SETTINGS,
-        defaultFont: typeof payload.defaultFont === 'string' ? payload.defaultFont : documentState.fileExtras.defaultFont,
-        defaultFontSize: typeof payload.defaultFontSize === 'number' ? payload.defaultFontSize : documentState.fileExtras.defaultFontSize,
-      }
-      await saveCurrentFile()
-      break
-    }
-
-    case 'requestLocalImage': {
-      await handleRequestLocalImage()
-      break
-    }
-
-    case 'dirtyStateChanged': {
-      const payload = msg.payload as Record<string, unknown> | undefined
-      if (payload && typeof payload.isDirty === 'boolean') {
-        isDocumentDirty = payload.isDirty
-      }
-      break
-    }
-
-    case 'toggleLanguage': {
-      currentLanguage = currentLanguage === 'vi' ? 'en' : 'vi'
-      mainWindow.webContents.send('host-message', {
-        type: 'language',
-        payload: { language: currentLanguage },
-      })
-      // Broadcast to all open PDF windows
-      for (const pdfWin of pdfWindows) {
-        if (!pdfWin.isDestroyed()) {
-          pdfWin.webContents.send('host-message', {
-            type: 'language',
-            payload: { language: currentLanguage },
-          })
-        }
-      }
-      break
-    }
-
-    default:
-      // Unknown message types are silently ignored
-      break
-  }
-}
 
 // ---------------------------------------------------------------------------
-// Document Loading (Task 3.3)
+// File Open Dialog
 // ---------------------------------------------------------------------------
-
-async function loadAndSendFile(filePath: string): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed()) return
-
-  try {
-    const buffer = await fs.readFile(filePath)
-    const parsed = await parseDocx(buffer as unknown as Buffer)
-
-    // Update Document_State
-    documentState.currentFilePath = filePath
-    documentState.fileContentHtml = parsed.bodyHtml
-    documentState.fileExtras = {
-      headerHtml: parsed.headerHtml,
-      footerHtml: parsed.footerHtml,
-      comments: parsed.comments,
-      pageSettings: parsed.pageSettings || DEFAULT_PAGE_SETTINGS,
-      defaultFont: parsed.metadata?.defaultFont ?? undefined,
-      defaultFontSize: parsed.metadata?.defaultFontSize ?? undefined,
-    }
-
-    // Build the load message payload
-    const payload = {
-      html: parsed.bodyHtml,
-      headerHtml: parsed.headerHtml,
-      footerHtml: parsed.footerHtml,
-      comments: parsed.comments,
-      warnings: parsed.warnings,
-      pageSettings: parsed.pageSettings || DEFAULT_PAGE_SETTINGS,
-      language: currentLanguage,
-      metadata: {
-        defaultFont: parsed.metadata?.defaultFont ?? 'Times New Roman',
-        defaultFontSize: parsed.metadata?.defaultFontSize ?? 13,
-      },
-    }
-
-    mainWindow.webContents.send('host-message', { type: 'load', payload })
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    dialog.showErrorBox('Lỗi mở file', message)
-  }
-}
 
 async function showOpenFileDialog(): Promise<void> {
   if (!mainWindow || mainWindow.isDestroyed()) return
@@ -395,205 +777,39 @@ async function showOpenFileDialog(): Promise<void> {
   if (result.canceled || result.filePaths.length === 0) return
 
   const filePath = result.filePaths[0]
-  const ext = path.extname(filePath).toLowerCase()
 
-  if (ext === '.pdf') {
-    openPdfViewer(filePath)
-  } else {
-    await loadAndSendFile(filePath)
-  }
-}
-
-function openPdfViewer(filePath: string): void {
-  const pdfWindow = new BrowserWindow({
-    width: 1024,
-    height: 800,
-    title: `PDF - ${path.basename(filePath)}`,
-    webPreferences: {
-      contextIsolation: false,
-      nodeIntegration: false,
-      sandbox: false,
-      webSecurity: false,
-    },
-  })
-
-  const pdfjsRoot = path.join(__dirname, '..', 'pdfjs')
-  const viewerHtmlPath = path.join(pdfjsRoot, 'web', 'viewer.html')
-  const buildBase = path.join(pdfjsRoot, 'build').replace(/\\/g, '/')
-  const pdfFileUrl = `file:///${filePath.replace(/\\/g, '/')}`
-  const workerSrc = `file:///${buildBase}/pdf.worker.mjs`
-  const sandboxSrc = `file:///${buildBase}/pdf.sandbox.mjs`
-
-  pdfWindow.loadFile(viewerHtmlPath)
-
-  pdfWindow.webContents.once('did-finish-load', () => {
-    pdfWindow.webContents.executeJavaScript(`
-      if (typeof PDFViewerApplicationOptions !== 'undefined') {
-        PDFViewerApplicationOptions.set('defaultUrl', '${pdfFileUrl.replace(/'/g, "\\'")}');
-        PDFViewerApplicationOptions.set('workerSrc', '${workerSrc}');
-        PDFViewerApplicationOptions.set('sandboxBundleSrc', '${sandboxSrc}');
-        PDFViewerApplicationOptions.set('disablePreferences', true);
-        if (typeof PDFViewerApplication !== 'undefined' && PDFViewerApplication.open) {
-          PDFViewerApplication.open({ url: '${pdfFileUrl.replace(/'/g, "\\'")}' });
-        }
-      }
-    `).catch(console.error)
-  })
-
-  pdfWindows.push(pdfWindow)
-  pdfWindowFilePaths.set(pdfWindow.id, filePath)
-
-  pdfWindow.on('closed', () => {
-    pdfWindows = pdfWindows.filter((w) => w !== pdfWindow)
-    pdfWindowFilePaths.delete(pdfWindow.id)
-  })
-}
-
-async function handlePdfWindowMessage(pdfWindow: BrowserWindow, message: unknown): Promise<void> {
-  if (pdfWindow.isDestroyed()) return
-  if (!message || typeof message !== 'object') return
-  const msg = message as { type?: string }
-
-  switch (msg.type) {
-    case 'ready': {
-      const filePath = pdfWindowFilePaths.get(pdfWindow.id)
-      if (filePath) {
-        // Convert local file path to a file:// URL for pdfjs-dist to load
-        const fileUrl = `file://${filePath.replace(/\\/g, '/')}`
-        pdfWindow.webContents.send('host-message', {
-          type: 'load-pdf-url',
-          payload: { url: fileUrl },
-        })
-      }
-      // Also send language info
-      pdfWindow.webContents.send('host-message', {
-        type: 'language',
-        payload: { language: currentLanguage },
-      })
-      break
-    }
-
-    case 'request-password': {
-      await handlePdfPasswordRequest(pdfWindow)
-      break
-    }
-
-    default:
-      break
-  }
-}
-
-async function handlePdfPasswordRequest(pdfWindow: BrowserWindow): Promise<void> {
-  if (pdfWindow.isDestroyed()) return
-
-  await dialog.showMessageBox(pdfWindow, {
-    type: 'warning',
-    title: 'PDF được bảo vệ',
-    message: 'File PDF này yêu cầu mật khẩu. Tính năng nhập mật khẩu chưa được hỗ trợ trong bản desktop.',
-    buttons: ['Đóng'],
-  })
-
-  // Close the PDF window instead of sending password: null, which would
-  // cause PdfViewerApp to render a confusing error screen.
-  if (!pdfWindow.isDestroyed()) {
-    pdfWindow.close()
-  }
-}
-
-async function showOpenPdfDialog(): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed()) return
-
-  const result = await dialog.showOpenDialog(mainWindow, {
-    filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
-    properties: ['openFile'],
-  })
-
-  if (result.canceled || result.filePaths.length === 0) return
-
-  openPdfViewer(result.filePaths[0])
-}
-
-// ---------------------------------------------------------------------------
-// Document Saving (Task 3.4)
-// ---------------------------------------------------------------------------
-
-async function saveCurrentFile(): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed()) return
-
-  // If no file path exists, route through Save As dialog first
-  if (documentState.currentFilePath === null) {
-    await showSaveAsDialog()
+  if (tabs.size === 0) {
+    const ext = path.extname(filePath).toLowerCase()
+    if (ext === '.pdf') createPdfTab(filePath)
+    else createEditorTab(filePath)
     return
   }
 
-  try {
-    const buffer = await serializeToDocx(documentState.fileContentHtml, {
-      headerHtml: documentState.fileExtras.headerHtml,
-      footerHtml: documentState.fileExtras.footerHtml,
-      comments: documentState.fileExtras.comments,
-      pageSettings: documentState.fileExtras.pageSettings,
-      defaultFont: documentState.fileExtras.defaultFont,
-      defaultFontSize: documentState.fileExtras.defaultFontSize,
-    })
-
-    await fs.writeFile(documentState.currentFilePath, buffer)
-
-    isDocumentDirty = false
-    mainWindow.webContents.send('host-message', { type: 'saved', payload: {} })
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    dialog.showErrorBox('Lỗi lưu file', message)
-  }
-}
-
-async function showSaveAsDialog(): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed()) return
-
-  const result = await dialog.showSaveDialog(mainWindow, {
-    filters: [{ name: 'Word Documents', extensions: ['docx'] }],
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    title: 'Mở file',
+    message: `Mở "${path.basename(filePath)}" trong:`,
+    buttons: ['Tab mới', 'Thay thế tab hiện tại', 'Hủy'],
+    defaultId: 0,
+    cancelId: 2,
   })
 
-  // If user cancels, abort without writing, without modifying currentFilePath, without sending saved
-  if (result.canceled || !result.filePath) return
-
-  try {
-    const buffer = await serializeToDocx(documentState.fileContentHtml, {
-      headerHtml: documentState.fileExtras.headerHtml,
-      footerHtml: documentState.fileExtras.footerHtml,
-      comments: documentState.fileExtras.comments,
-      pageSettings: documentState.fileExtras.pageSettings,
-      defaultFont: documentState.fileExtras.defaultFont,
-      defaultFontSize: documentState.fileExtras.defaultFontSize,
-    })
-
-    await fs.writeFile(result.filePath, buffer)
-
-    // Only update currentFilePath after successful write
-    documentState.currentFilePath = result.filePath
-
-    isDocumentDirty = false
-    mainWindow.webContents.send('host-message', { type: 'saved', payload: {} })
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    dialog.showErrorBox('Lỗi lưu file', message)
-  }
+  if (response === 2) return
+  void openFileInTab(filePath, response === 0 ? 'new' : 'replace')
 }
 
 // ---------------------------------------------------------------------------
-// Local Image Insertion (Task 3.5)
+// Local Image Insertion
 // ---------------------------------------------------------------------------
 
-async function handleRequestLocalImage(): Promise<void> {
+async function handleRequestLocalImage(webContents: Electron.WebContents): Promise<void> {
   if (!mainWindow || mainWindow.isDestroyed()) return
 
   const result = await dialog.showOpenDialog(mainWindow, {
-    filters: [
-      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] },
-    ],
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] }],
     properties: ['openFile'],
   })
 
-  // On cancel: take no action
   if (result.canceled || result.filePaths.length === 0) return
 
   const filePath = result.filePaths[0]
@@ -602,33 +818,16 @@ async function handleRequestLocalImage(): Promise<void> {
     const buffer = await fs.readFile(filePath)
     const ext = path.extname(filePath).toLowerCase().replace('.', '')
     const mimeMap: Record<string, string> = {
-      png: 'image/png',
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      gif: 'image/gif',
-      webp: 'image/webp',
-      svg: 'image/svg+xml',
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
     }
     const mime = mimeMap[ext] || 'application/octet-stream'
-    const base64Data = `data:${mime};base64,${buffer.toString('base64')}`
-    const fileName = path.basename(filePath)
-
-    mainWindow.webContents.send('host-message', {
+    webContents.send('host-message', {
       type: 'localImageResult',
-      payload: {
-        success: true,
-        base64Data,
-        fileName,
-      },
+      payload: { success: true, base64Data: `data:${mime};base64,${buffer.toString('base64')}`, fileName: path.basename(filePath) },
     })
   } catch {
-    // On read failure: send localImageResult with success: false
-    mainWindow.webContents.send('host-message', {
-      type: 'localImageResult',
-      payload: {
-        success: false,
-      },
-    })
+    webContents.send('host-message', { type: 'localImageResult', payload: { success: false } })
   }
 }
 
@@ -933,16 +1132,19 @@ function buildPrintHtml(
 async function exportToPdf(): Promise<void> {
   if (!mainWindow || mainWindow.isDestroyed()) return
 
-  if (documentState.currentFilePath === null && !documentState.fileContentHtml) {
+  const activeTab = activeTabId ? tabs.get(activeTabId) : null
+  const docState = activeTab?.documentState
+
+  if (!docState?.fileContentHtml) {
     dialog.showErrorBox('Lỗi xuất PDF', 'Vui lòng mở hoặc tạo tài liệu trước khi xuất PDF.')
     return
   }
 
-  const defaultName = documentState.currentFilePath
-    ? path.parse(documentState.currentFilePath).name + '.pdf'
+  const defaultName = docState.currentFilePath
+    ? path.parse(docState.currentFilePath).name + '.pdf'
     : 'document.pdf'
-  const defaultDir = documentState.currentFilePath
-    ? path.dirname(documentState.currentFilePath)
+  const defaultDir = docState.currentFilePath
+    ? path.dirname(docState.currentFilePath)
     : app.getPath('documents')
 
   const result = await dialog.showSaveDialog(mainWindow, {
@@ -962,11 +1164,11 @@ async function exportToPdf(): Promise<void> {
     // proceed without CSS
   }
 
-  const pageSettings = documentState.fileExtras.pageSettings ?? DEFAULT_PAGE_SETTINGS
-  const headerHtml = documentState.fileExtras.headerHtml ?? ''
-  const footerHtml = documentState.fileExtras.footerHtml ?? ''
-  const defaultFont = documentState.fileExtras.defaultFont ?? 'Times New Roman'
-  const defaultFontSize = documentState.fileExtras.defaultFontSize ?? 12
+  const pageSettings = docState.fileExtras.pageSettings ?? DEFAULT_PAGE_SETTINGS
+  const headerHtml = docState.fileExtras.headerHtml ?? ''
+  const footerHtml = docState.fileExtras.footerHtml ?? ''
+  const defaultFont = docState.fileExtras.defaultFont ?? 'Times New Roman'
+  const defaultFontSize = docState.fileExtras.defaultFontSize ?? 12
 
   if (!browserPath) {
     // Fallback: use Electron printToPDF with a warning
@@ -1003,7 +1205,7 @@ async function exportToPdf(): Promise<void> {
     fsSync.mkdirSync(tempDir, { recursive: true })
 
     const fullHtml = buildPrintHtml(
-      documentState.fileContentHtml,
+      docState.fileContentHtml,
       pageSettings,
       headerHtml,
       footerHtml,
@@ -1072,25 +1274,7 @@ function createAppMenu(): void {
           label: 'Tạo mới',
           accelerator: 'CmdOrCtrl+N',
           click: () => {
-            void (async () => {
-              if (isDocumentDirty && mainWindow && !mainWindow.isDestroyed()) {
-                const { response } = await dialog.showMessageBox(mainWindow, {
-                  type: 'question',
-                  title: 'Tài liệu chưa lưu',
-                  message: 'Tài liệu có thay đổi chưa lưu. Bạn có muốn lưu không?',
-                  buttons: ['Lưu', 'Không lưu', 'Hủy'],
-                  defaultId: 0,
-                  cancelId: 2,
-                })
-                if (response === 2) return // Cancel
-                if (response === 0) await saveCurrentFile()
-              }
-              documentState.currentFilePath = null
-              documentState.fileContentHtml = ''
-              documentState.fileExtras = {}
-              isDocumentDirty = false
-              mainWindow?.reload()
-            })()
+            createEditorTab()
           },
         },
         {
@@ -1101,23 +1285,17 @@ function createAppMenu(): void {
           },
         },
         {
-          label: 'Mở file PDF...',
-          click: () => {
-            void showOpenPdfDialog()
-          },
-        },
-        {
           label: 'Lưu',
           accelerator: 'CmdOrCtrl+S',
           click: () => {
-            void saveCurrentFile()
+            if (activeTabId) void saveTabFile(activeTabId)
           },
         },
         {
           label: 'Lưu dưới dạng...',
           accelerator: 'CmdOrCtrl+Shift+S',
           click: () => {
-            void showSaveAsDialog()
+            if (activeTabId) void saveTabFileAs(activeTabId)
           },
         },
         { type: 'separator' },
@@ -1185,15 +1363,20 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', (event) => {
-  if (!isDocumentDirty || isQuitting) return
+  if (isQuitting) return
+  const dirtyTabs = [...tabs.values()].filter((t) => t.isDirty)
+  if (dirtyTabs.length === 0) return
   if (!mainWindow || mainWindow.isDestroyed()) return
   event.preventDefault()
-  void confirmUnsavedChanges().then(async (action) => {
-    if (action === 'cancel') return
-    if (action === 'save') await saveCurrentFile()
+  void (async () => {
+    for (const tab of dirtyTabs) {
+      const action = await confirmUnsavedChangesForTab(tab)
+      if (action === 'cancel') return
+      if (action === 'save') await saveTabFile(tab.id)
+    }
     isQuitting = true
     app.quit()
-  })
+  })()
 })
 
 app.on('window-all-closed', () => {
@@ -1212,22 +1395,20 @@ export {
   createWindow,
   openEditorFromHome,
   openAtlasWebWindow,
-  handleVsCodeMessage,
-  loadAndSendFile,
+  handleVsCodeMessageForTab,
+  loadAndSendFileToTab,
   showOpenFileDialog,
-  saveCurrentFile,
-  showSaveAsDialog,
+  saveTabFile,
+  saveTabFileAs,
   handleRequestLocalImage,
   exportToPdf,
-  openPdfViewer,
-  showOpenPdfDialog,
-  handlePdfWindowMessage,
+  createPdfTab,
+  createEditorTab,
   createAppMenu,
-  documentState,
+  tabs,
+  activeTabId,
   homeWindow,
   mainWindow,
   atlasWindow,
-  pdfWindows,
   currentLanguage,
-  isDocumentDirty,
 }

@@ -37,6 +37,17 @@ const buildConfigs = [
     sourcemap: true,
     minify: false,
   },
+  {
+    entryPoints: ['./electron/tab-bar-preload.ts'],
+    bundle: true,
+    outfile: './out/electron/tab-bar-preload.js',
+    external: ['electron'],
+    format: 'cjs',
+    platform: 'node',
+    target: 'node20',
+    sourcemap: true,
+    minify: false,
+  },
 ]
 
 async function main() {

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'unsafe-inline'">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      height: 36px;
+      background: #1e1e1e;
+      display: flex;
+      align-items: stretch;
+      overflow: hidden;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 12px;
+      color: #ccc;
+    }
+
+    #tabs {
+      display: flex;
+      flex: 1;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+    }
+    #tabs::-webkit-scrollbar { display: none; }
+
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 8px 0 10px;
+      min-width: 100px;
+      max-width: 200px;
+      height: 36px;
+      background: #2d2d2d;
+      border-right: 1px solid #111;
+      cursor: pointer;
+      color: #999;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .tab:hover { background: #323232; color: #ccc; }
+    .tab.active { background: #1e1e1e; color: #fff; border-top: 1px solid #007acc; }
+
+    .tab-icon { font-size: 10px; opacity: 0.6; flex-shrink: 0; }
+    .tab-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tab-dirty {
+      color: #e5a50a;
+      font-size: 14px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .tab-close {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 3px;
+      flex-shrink: 0;
+      opacity: 0;
+      font-size: 14px;
+      color: #999;
+    }
+    .tab:hover .tab-close,
+    .tab.active .tab-close { opacity: 1; }
+    .tab-close:hover { background: #555; color: #fff; }
+
+    #new-tab-btn {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #666;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    #new-tab-btn:hover { color: #ccc; background: #2d2d2d; }
+
+    /* Open mode prompt overlay */
+    #open-mode-overlay {
+      display: none;
+      position: fixed;
+      top: 36px;
+      left: 0;
+      right: 0;
+      background: #252526;
+      border-bottom: 1px solid #3c3c3c;
+      padding: 8px 12px;
+      align-items: center;
+      gap: 8px;
+      z-index: 100;
+      font-size: 12px;
+      color: #ccc;
+    }
+    #open-mode-overlay.visible { display: flex; }
+    #open-mode-overlay span { flex: 1; }
+
+    .prompt-btn {
+      padding: 3px 10px;
+      border-radius: 3px;
+      border: 1px solid #555;
+      background: #3c3c3c;
+      color: #ccc;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .prompt-btn:hover { background: #4c4c4c; }
+    .prompt-btn.primary { background: #007acc; border-color: #007acc; color: #fff; }
+    .prompt-btn.primary:hover { background: #1a8ad4; }
+  </style>
+</head>
+<body>
+  <div id="tabs"></div>
+  <div id="new-tab-btn" title="Tab mới">+</div>
+
+  <div id="open-mode-overlay">
+    <span>Mở file trong:</span>
+    <button class="prompt-btn primary" id="btn-new-tab">Tab mới</button>
+    <button class="prompt-btn" id="btn-replace-tab">Thay thế tab hiện tại</button>
+    <button class="prompt-btn" id="btn-cancel-open">Hủy</button>
+  </div>
+
+  <script src="tab-bar.js"></script>
+</body>
+</html>

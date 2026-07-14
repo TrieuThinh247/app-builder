@@ -12,7 +12,8 @@
     "out/webview/**/*",
     "out/pdf-webview/**/*",
     "out/home-webview/**/*",
-    "out/pdfjs/**/*"
+    "out/pdfjs/**/*",
+    "out/tab-bar/**/*"
   ],
   "win": {
     "target": "nsis",

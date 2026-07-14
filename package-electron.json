@@ -15,7 +15,8 @@
     "build:pdf-webview": "vite build --config vite.config.pdf-electron.ts",
     "build:electron-main": "node esbuild.electron-main.mjs",
     "build:electron-preload": "node esbuild.electron-preload.mjs",
-    "build:electron": "npm run build:webview && npm run build:pdf-webview && npm run build:electron-main && npm run build:electron-preload",
+    "copy:tab-bar": "node -e \"require('fs').cpSync('./src/tab-bar', './out/tab-bar', {recursive:true})\"",
+    "build:electron": "npm run build:webview && npm run build:pdf-webview && npm run build:electron-main && npm run build:electron-preload && npm run copy:tab-bar",
     "electron:dev": "npm run build:electron && electron out/electron/main.js",
     "electron:dist": "npm run build:electron && electron-builder"
   },
