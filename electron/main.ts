@@ -840,6 +840,20 @@ function createWindow(initialFilePath?: string): void {
 // ---------------------------------------------------------------------------
 
 function registerIpcHandlers(): void {
+  ipcMain.handle('open-file-dialog-from-home', async () => {
+    if (!homeWindow || homeWindow.isDestroyed()) return null
+    const result = await dialog.showOpenDialog(homeWindow, {
+      filters: [
+        { name: currentLanguage === 'vi' ? 'Tài liệu được hỗ trợ' : 'Supported files', extensions: ['docx', 'pdf'] },
+        { name: 'Word Documents', extensions: ['docx'] },
+        { name: 'PDF Files', extensions: ['pdf'] },
+      ],
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
   ipcMain.handle('get-recent-files', () => {
     return loadRecentFiles()
   })

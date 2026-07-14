@@ -481,10 +481,15 @@ body {
   color: var(--accent-blue);
 }
 
-.editor-home-new-icon {
-  opacity: 0.6;
-  display: flex;
-  align-items: center;
+.editor-home-open-card {
+  border-style: solid;
+  border-color: var(--eh-border);
+}
+
+.editor-home-open-card:hover {
+  border-color: var(--accent-purple);
+  background: var(--eh-new-hover-bg);
+  color: var(--accent-purple);
 }
 
 .editor-home-new-card:hover .editor-home-new-icon {

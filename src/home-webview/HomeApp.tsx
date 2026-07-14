@@ -24,6 +24,7 @@ declare global {
       onTheme: (cb: (theme: string) => void) => void
       getSettings: () => Promise<{ language: Lang; theme: Theme }>
       applySettings: (settings: { language: Lang; theme: Theme }) => void
+      openFileDialog: () => Promise<string | null>
       getRecentFiles: () => Promise<RecentFile[]>
     }
   }
@@ -40,6 +41,7 @@ const STRINGS = {
     atlasDesc: 'Sử dụng AI tại atlas.leandix.com',
     offlineNote: 'Chế độ offline chỉ hỗ trợ chỉnh sửa văn bản.',
     newDoc: 'Tài liệu trống',
+    openDoc: 'Mở file...',
     recentDocs: 'Tài liệu gần đây',
     noRecent: 'Chưa có tài liệu nào được mở gần đây.',
     back: '← Trang chủ',
@@ -61,6 +63,7 @@ const STRINGS = {
     atlasDesc: 'Use AI at atlas.leandix.com',
     offlineNote: 'Offline mode supports text editing only.',
     newDoc: 'Blank document',
+    openDoc: 'Open file...',
     recentDocs: 'Recent documents',
     noRecent: 'No documents opened recently.',
     back: '← Home',
@@ -221,6 +224,13 @@ function EditorHomeScreen({
           <button className="editor-home-new-card" onClick={() => window.homeApi.openEditorNew()}>
             <div className="editor-home-new-icon"><Plus size={22} strokeWidth={1.5} /></div>
             <span>{s.newDoc}</span>
+          </button>
+          <button className="editor-home-new-card editor-home-open-card" onClick={async () => {
+            const filePath = await window.homeApi.openFileDialog()
+            if (filePath) window.homeApi.openEditorWithFile(filePath)
+          }}>
+            <div className="editor-home-new-icon"><FileText size={22} strokeWidth={1.5} /></div>
+            <span>{s.openDoc}</span>
           </button>
         </div>
 

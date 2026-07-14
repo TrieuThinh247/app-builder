@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld('homeApi', {
   applySettings: (settings: { language: 'vi' | 'en'; theme: 'dark' | 'light' }) => {
     ipcRenderer.send('apply-settings', settings)
   },
+  openFileDialog: (): Promise<string | null> => {
+    return ipcRenderer.invoke('open-file-dialog-from-home')
+  },
   getRecentFiles: (): Promise<Array<{ filePath: string; title: string; lastOpenedAt: string }>> => {
     return ipcRenderer.invoke('get-recent-files')
   },
