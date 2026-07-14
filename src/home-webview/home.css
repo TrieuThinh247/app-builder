@@ -136,6 +136,224 @@ body {
   color: #f87171;
 }
 
+.home-lang-toggle {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 0.4rem;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.home-lang-toggle:hover {
+  background: #2d3f55;
+  border-color: #6366f1;
+  color: #f1f5f9;
+}
+
+.home-note {
+  font-size: 0.8rem;
+  color: #64748b;
+  text-align: center;
+}
+
+/* -------------------------------------------------------------------------
+   Editor Home Screen (Google Docs-style launcher)
+   ---------------------------------------------------------------------- */
+
+.editor-home-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f8fafc;
+  color: #1e293b;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+.editor-home-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.editor-home-back {
+  background: none;
+  border: none;
+  color: #6366f1;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  transition: background 0.1s;
+}
+
+.editor-home-back:hover {
+  background: #f1f0ff;
+}
+
+.editor-home-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.editor-home-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem 2rem 2rem;
+}
+
+.editor-home-section-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+}
+
+.editor-home-recent-label {
+  margin-top: 2rem;
+}
+
+/* New document card */
+.editor-home-new-row {
+  display: flex;
+  gap: 1rem;
+}
+
+.editor-home-new-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 110px;
+  height: 130px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 0.5rem;
+  background: #fff;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.editor-home-new-card:hover {
+  border-color: #6366f1;
+  background: #f5f3ff;
+  color: #6366f1;
+}
+
+.editor-home-new-icon {
+  opacity: 0.5;
+}
+
+.editor-home-new-card:hover .editor-home-new-icon {
+  opacity: 1;
+}
+
+/* Recent files grid */
+.editor-home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.editor-home-file-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  overflow: hidden;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.editor-home-file-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  border-color: #6366f1;
+}
+
+.editor-home-file-thumb {
+  height: 110px;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.editor-home-file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0.75rem;
+  padding-right: 1.75rem;
+}
+
+.editor-home-file-name {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-home-file-date {
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
+.editor-home-file-menu {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.4rem;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0.2rem;
+  border-radius: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s;
+}
+
+.editor-home-file-menu:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.editor-home-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

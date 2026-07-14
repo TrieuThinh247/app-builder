@@ -10,4 +10,6 @@ contextBridge.exposeInMainWorld('tabBarApi', {
     ipcRenderer.on('tab-state', (_e, tabs) => cb(tabs)),
   onAskOpenMode: (cb: () => void) =>
     ipcRenderer.on('tab-open-mode-prompt', () => cb()),
+  onLanguage: (cb: (lang: string) => void) =>
+    ipcRenderer.on('tab-bar-language', (_e, lang) => cb(lang)),
 })

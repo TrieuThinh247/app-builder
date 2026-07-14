@@ -10,6 +10,52 @@ import { serializeToDocx } from '../../extension/src/extension/DocxSerializer'
 import { DEFAULT_PAGE_SETTINGS } from '../../extension/src/shared/constants'
 
 // ---------------------------------------------------------------------------
+// Recent Files
+// ---------------------------------------------------------------------------
+
+interface RecentFileEntry {
+  filePath: string
+  title: string
+  lastOpenedAt: string // ISO string
+}
+
+const MAX_RECENT_FILES = 20
+
+function getRecentFilesPath(): string {
+  return path.join(app.getPath('userData'), 'recent-files.json')
+}
+
+function loadRecentFiles(): RecentFileEntry[] {
+  try {
+    const raw = fsSync.readFileSync(getRecentFilesPath(), 'utf-8')
+    return JSON.parse(raw) as RecentFileEntry[]
+  } catch {
+    return []
+  }
+}
+
+function saveRecentFiles(entries: RecentFileEntry[]): void {
+  try {
+    fsSync.writeFileSync(getRecentFilesPath(), JSON.stringify(entries, null, 2), 'utf-8')
+  } catch {
+    // ignore write errors
+  }
+}
+
+function addRecentFile(filePath: string): void {
+  let entries = loadRecentFiles()
+  // Remove existing entry for this path
+  entries = entries.filter((e) => e.filePath !== filePath)
+  entries.unshift({
+    filePath,
+    title: path.basename(filePath),
+    lastOpenedAt: new Date().toISOString(),
+  })
+  if (entries.length > MAX_RECENT_FILES) entries = entries.slice(0, MAX_RECENT_FILES)
+  saveRecentFiles(entries)
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -67,8 +113,10 @@ const tabs = new Map<string, Tab>()
 let activeTabId: string | null = null
 let tabBarView: WebContentsView | null = null
 
-/** Path waiting for new/replace decision from user */
 let pendingOpenFilePath: string | null = null
+
+/** File path to open when the first editor window is created */
+let pendingInitialFilePath: string | null = null
 
 /** Current UI language — toggled between 'vi' and 'en' */
 let currentLanguage: 'vi' | 'en' = 'vi'
@@ -129,9 +177,11 @@ function checkNetwork(): Promise<boolean> {
 
 function createHomeWindow(): void {
   homeWindow = new BrowserWindow({
-    width: 600,
-    height: 480,
-    resizable: false,
+    width: 960,
+    height: 640,
+    minWidth: 720,
+    minHeight: 500,
+    resizable: true,
     center: true,
     title: 'Leandix Atlas',
     webPreferences: {
@@ -148,6 +198,7 @@ function createHomeWindow(): void {
   homeWindow.webContents.once('did-finish-load', () => {
     void checkNetwork().then((online) => {
       homeWindow?.webContents.send('home-network-status', online)
+      homeWindow?.webContents.send('home-language', currentLanguage)
 
       // If offline, go straight to editor after brief delay so user sees the screen
       if (!online) {
@@ -163,14 +214,17 @@ function createHomeWindow(): void {
   })
 }
 
-function openEditorFromHome(): void {
+function openEditorFromHome(filePath?: string): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show()
     mainWindow.focus()
     homeWindow?.close()
+    if (filePath) {
+      createEditorTab(filePath)
+    }
     return
   }
-  createWindow()
+  createWindow(filePath)
   homeWindow?.close()
 }
 
@@ -392,7 +446,15 @@ async function closeTab(tabId: string): Promise<void> {
     if (remaining.length > 0) {
       setActiveTab(remaining[remaining.length - 1])
     } else {
-      createEditorTab()
+      // No tabs left — go back to home screen
+      if (homeWindow && !homeWindow.isDestroyed()) {
+        homeWindow.show()
+        homeWindow.focus()
+      } else {
+        createHomeWindow()
+      }
+      mainWindow?.destroy()
+      return
     }
   }
 
@@ -459,6 +521,7 @@ async function loadAndSendFileToTab(tabId: string, filePath: string): Promise<vo
   try {
     const buffer = await fs.readFile(filePath)
     const parsed = await parseDocx(buffer as unknown as Buffer)
+    addRecentFile(filePath)
 
     tab.documentState.currentFilePath = filePath
     tab.documentState.fileContentHtml = parsed.bodyHtml
@@ -545,6 +608,7 @@ async function saveTabFileAs(tabId: string): Promise<void> {
     tab.documentState.currentFilePath = result.filePath
     tab.title = path.basename(result.filePath)
     tab.isDirty = false
+    addRecentFile(result.filePath)
     tab.view.webContents.send('host-message', { type: 'saved', payload: {} })
     pushTabState()
   } catch (err: unknown) {
@@ -656,6 +720,12 @@ async function handleVsCodeMessageForTab(tabId: string, message: unknown): Promi
           t.view.webContents.send('host-message', { type: 'language', payload: { language: currentLanguage } })
         }
       }
+      // Rebuild native app menu in new language
+      createAppMenu()
+      // Push language to tab bar
+      if (tabBarView && !tabBarView.webContents.isDestroyed()) {
+        tabBarView.webContents.send('tab-bar-language', currentLanguage)
+      }
       break
     }
 
@@ -664,7 +734,8 @@ async function handleVsCodeMessageForTab(tabId: string, message: unknown): Promi
   }
 }
 
-function createWindow(): void {
+function createWindow(initialFilePath?: string): void {
+  pendingInitialFilePath = initialFilePath ?? null
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -708,6 +779,14 @@ function createWindow(): void {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    tabBarView = null
+    // Re-open home if no other windows remain
+    if (!homeWindow || homeWindow.isDestroyed()) {
+      createHomeWindow()
+    } else {
+      homeWindow.show()
+      homeWindow.focus()
+    }
   })
 }
 
@@ -716,11 +795,35 @@ function createWindow(): void {
 // ---------------------------------------------------------------------------
 
 function registerIpcHandlers(): void {
-  ipcMain.on('home-action', (_event, message: { type: string }) => {
+  ipcMain.handle('get-recent-files', () => {
+    return loadRecentFiles()
+  })
+
+  ipcMain.on('home-action', (_event, message: { type: string; filePath?: string }) => {
     if (message.type === 'open-editor') {
+      openEditorFromHome(message.filePath)
+    } else if (message.type === 'open-editor-new') {
       openEditorFromHome()
     } else if (message.type === 'open-atlas-web') {
       openAtlasWebWindow()
+    } else if (message.type === 'toggle-language') {
+      currentLanguage = currentLanguage === 'vi' ? 'en' : 'vi'
+      // Update home window
+      if (homeWindow && !homeWindow.isDestroyed()) {
+        homeWindow.webContents.send('home-language', currentLanguage)
+      }
+      // Update all editor tabs
+      for (const t of tabs.values()) {
+        if (!t.view.webContents.isDestroyed()) {
+          t.view.webContents.send('host-message', { type: 'language', payload: { language: currentLanguage } })
+        }
+      }
+      // Update tab bar
+      if (tabBarView && !tabBarView.webContents.isDestroyed()) {
+        tabBarView.webContents.send('tab-bar-language', currentLanguage)
+      }
+      // Rebuild native app menu
+      createAppMenu()
     }
   })
 
@@ -732,8 +835,16 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.on('tab-bar-ready', () => {
-    if (tabs.size === 0) createEditorTab()
-    else pushTabState()
+    if (tabs.size === 0) {
+      createEditorTab(pendingInitialFilePath ?? undefined)
+      pendingInitialFilePath = null
+    } else {
+      pushTabState()
+    }
+    // Send current language so tab bar renders in the right locale from startup
+    if (tabBarView && !tabBarView.webContents.isDestroyed()) {
+      tabBarView.webContents.send('tab-bar-language', currentLanguage)
+    }
   })
 
   ipcMain.on('tab-create', () => {
@@ -1252,13 +1363,65 @@ async function exportToPdf(): Promise<void> {
 // Vietnamese Application Menu (Task 3.7)
 // ---------------------------------------------------------------------------
 
+const MENU_STRINGS: Record<'vi' | 'en', Record<string, string>> = {
+  vi: {
+    file: 'Tệp tin',
+    home: 'Trang chủ',
+    new: 'Tạo mới',
+    open: 'Mở file...',
+    save: 'Lưu',
+    saveAs: 'Lưu dưới dạng...',
+    exportPdf: 'Xuất PDF...',
+    quit: 'Thoát',
+    edit: 'Chỉnh sửa',
+    undo: 'Hoàn tác',
+    redo: 'Làm lại',
+    cut: 'Cắt',
+    copy: 'Sao chép',
+    paste: 'Dán',
+    selectAll: 'Chọn tất cả',
+    view: 'Xem',
+    reload: 'Tải lại giao diện',
+    devTools: 'Bật DevTools',
+    resetZoom: 'Đặt lại Zoom',
+    zoomIn: 'Phóng to',
+    zoomOut: 'Thu nhỏ',
+    fullscreen: 'Toàn màn hình',
+  },
+  en: {
+    file: 'File',
+    home: 'Home',
+    new: 'New',
+    open: 'Open...',
+    save: 'Save',
+    saveAs: 'Save As...',
+    exportPdf: 'Export PDF...',
+    quit: 'Quit',
+    edit: 'Edit',
+    undo: 'Undo',
+    redo: 'Redo',
+    cut: 'Cut',
+    copy: 'Copy',
+    paste: 'Paste',
+    selectAll: 'Select All',
+    view: 'View',
+    reload: 'Reload',
+    devTools: 'Toggle DevTools',
+    resetZoom: 'Reset Zoom',
+    zoomIn: 'Zoom In',
+    zoomOut: 'Zoom Out',
+    fullscreen: 'Toggle Fullscreen',
+  },
+}
+
 function createAppMenu(): void {
+  const m = MENU_STRINGS[currentLanguage]
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: 'Tệp tin',
+      label: m.file,
       submenu: [
         {
-          label: 'Trang chủ',
+          label: m.home,
           accelerator: 'CmdOrCtrl+Shift+H',
           click: () => {
             if (homeWindow && !homeWindow.isDestroyed()) {
@@ -1271,71 +1434,58 @@ function createAppMenu(): void {
         },
         { type: 'separator' },
         {
-          label: 'Tạo mới',
+          label: m.new,
           accelerator: 'CmdOrCtrl+N',
-          click: () => {
-            createEditorTab()
-          },
+          click: () => { createEditorTab() },
         },
         {
-          label: 'Mở file...',
+          label: m.open,
           accelerator: 'CmdOrCtrl+O',
-          click: () => {
-            void showOpenFileDialog()
-          },
+          click: () => { void showOpenFileDialog() },
         },
         {
-          label: 'Lưu',
+          label: m.save,
           accelerator: 'CmdOrCtrl+S',
-          click: () => {
-            if (activeTabId) void saveTabFile(activeTabId)
-          },
+          click: () => { if (activeTabId) void saveTabFile(activeTabId) },
         },
         {
-          label: 'Lưu dưới dạng...',
+          label: m.saveAs,
           accelerator: 'CmdOrCtrl+Shift+S',
-          click: () => {
-            if (activeTabId) void saveTabFileAs(activeTabId)
-          },
+          click: () => { if (activeTabId) void saveTabFileAs(activeTabId) },
         },
         { type: 'separator' },
         {
-          label: 'Xuất PDF...',
+          label: m.exportPdf,
           accelerator: 'CmdOrCtrl+P',
-          click: () => {
-            void exportToPdf()
-          },
+          click: () => { void exportToPdf() },
         },
         { type: 'separator' },
-        {
-          label: 'Thoát',
-          role: 'quit',
-        },
+        { label: m.quit, role: 'quit' },
       ],
     },
     {
-      label: 'Chỉnh sửa',
+      label: m.edit,
       submenu: [
-        { label: 'Hoàn tác', role: 'undo' },
-        { label: 'Làm lại', role: 'redo' },
+        { label: m.undo, role: 'undo' },
+        { label: m.redo, role: 'redo' },
         { type: 'separator' },
-        { label: 'Cắt', role: 'cut' },
-        { label: 'Sao chép', role: 'copy' },
-        { label: 'Dán', role: 'paste' },
-        { label: 'Chọn tất cả', role: 'selectAll' },
+        { label: m.cut, role: 'cut' },
+        { label: m.copy, role: 'copy' },
+        { label: m.paste, role: 'paste' },
+        { label: m.selectAll, role: 'selectAll' },
       ],
     },
     {
-      label: 'Xem',
+      label: m.view,
       submenu: [
-        { label: 'Tải lại giao diện', role: 'reload' },
-        { label: 'Bật DevTools', role: 'toggleDevTools' },
+        { label: m.reload, role: 'reload' },
+        { label: m.devTools, role: 'toggleDevTools' },
         { type: 'separator' },
-        { label: 'Đặt lại Zoom', role: 'resetZoom' },
-        { label: 'Phóng to', role: 'zoomIn' },
-        { label: 'Thu nhỏ', role: 'zoomOut' },
+        { label: m.resetZoom, role: 'resetZoom' },
+        { label: m.zoomIn, role: 'zoomIn' },
+        { label: m.zoomOut, role: 'zoomOut' },
         { type: 'separator' },
-        { label: 'Toàn màn hình', role: 'togglefullscreen' },
+        { label: m.fullscreen, role: 'togglefullscreen' },
       ],
     },
   ]
@@ -1405,6 +1555,8 @@ export {
   createPdfTab,
   createEditorTab,
   createAppMenu,
+  addRecentFile,
+  loadRecentFiles,
   tabs,
   activeTabId,
   homeWindow,

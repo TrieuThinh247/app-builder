@@ -6,8 +6,47 @@
   const btnNewTab = document.getElementById('btn-new-tab')
   const btnReplaceTab = document.getElementById('btn-replace-tab')
   const btnCancelOpen = document.getElementById('btn-cancel-open')
+  const openModeLabel = document.getElementById('open-mode-label')
+  const newTabBtn = document.getElementById('new-tab-btn')
 
-  document.getElementById('new-tab-btn').addEventListener('click', () => {
+  const STRINGS = {
+    vi: {
+      newTab: 'Tab mới',
+      openIn: 'Mở file trong:',
+      btnNewTab: 'Tab mới',
+      btnReplace: 'Thay thế tab hiện tại',
+      btnCancel: 'Hủy',
+      closeTab: 'Đóng tab',
+      unsaved: 'Chưa lưu',
+    },
+    en: {
+      newTab: 'New tab',
+      openIn: 'Open file in:',
+      btnNewTab: 'New tab',
+      btnReplace: 'Replace current tab',
+      btnCancel: 'Cancel',
+      closeTab: 'Close tab',
+      unsaved: 'Unsaved',
+    },
+  }
+
+  let lang = 'vi'
+  let lastTabs = []
+
+  function s(key) {
+    return (STRINGS[lang] || STRINGS.vi)[key]
+  }
+
+  function applyLanguage() {
+    newTabBtn.title = s('newTab')
+    openModeLabel.textContent = s('openIn')
+    btnNewTab.textContent = s('btnNewTab')
+    btnReplaceTab.textContent = s('btnReplace')
+    btnCancelOpen.textContent = s('btnCancel')
+    renderTabs(lastTabs)
+  }
+
+  newTabBtn.addEventListener('click', () => {
     window.tabBarApi.createTab()
   })
 
@@ -26,11 +65,17 @@
   })
 
   window.tabBarApi.onTabState((tabs) => {
+    lastTabs = tabs
     renderTabs(tabs)
   })
 
   window.tabBarApi.onAskOpenMode(() => {
     openModeOverlay.classList.add('visible')
+  })
+
+  window.tabBarApi.onLanguage((newLang) => {
+    lang = newLang
+    applyLanguage()
   })
 
   function renderTabs(tabs) {
@@ -52,13 +97,13 @@
       const closeBtn = document.createElement('span')
       closeBtn.className = 'tab-close'
       closeBtn.textContent = '×'
-      closeBtn.title = 'Đóng tab'
+      closeBtn.title = s('closeTab')
 
       if (tab.isDirty) {
         const dirty = document.createElement('span')
         dirty.className = 'tab-dirty'
         dirty.textContent = '●'
-        dirty.title = 'Chưa lưu'
+        dirty.title = s('unsaved')
         el.appendChild(icon)
         el.appendChild(title)
         el.appendChild(dirty)
@@ -82,10 +127,10 @@
       tabsEl.appendChild(el)
     }
 
-    // Scroll active tab into view
     const activeEl = tabsEl.querySelector('.tab.active')
     if (activeEl) activeEl.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 
+  applyLanguage()
   window.tabBarApi.ready()
 })()
