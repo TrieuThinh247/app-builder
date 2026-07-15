@@ -9,6 +9,15 @@ import { parseDocx } from '../../extension/src/extension/DocxParser'
 import { serializeToDocx } from '../../extension/src/extension/DocxSerializer'
 import { DEFAULT_PAGE_SETTINGS } from '../../extension/src/shared/constants'
 
+// Renderer globals injected via contextBridge (preload.ts)
+declare global {
+  interface Window {
+    leandixApp?: {
+      dropFile: (filePath: string) => void
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
@@ -234,6 +243,19 @@ function createHomeWindow(): void {
   homeWindow.loadFile(path.join(__dirname, '..', 'home-webview', 'index.html'))
   homeWindow.setMenuBarVisibility(false)
 
+  // Home window drag & drop: dropping a file on the home screen opens the editor
+  homeWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://')) return
+    let filePath: string
+    try {
+      filePath = decodeURIComponent(new URL(url).pathname)
+      if (process.platform === 'win32' && filePath.startsWith('/')) filePath = filePath.slice(1)
+    } catch { return }
+    if (!isSupportedDroppedFile(filePath)) return
+    event.preventDefault()
+    void handleDroppedFile(filePath)
+  })
+
   homeWindow.webContents.once('did-finish-load', () => {
     void checkNetwork().then((online) => {
       homeWindow?.webContents.send('home-network-status', online)
@@ -375,6 +397,41 @@ function createEditorTab(filePath?: string): string {
     // Send current theme and language so editor starts with correct settings
     view.webContents.send('host-message', { type: 'theme', payload: { theme: currentTheme } })
     view.webContents.send('host-message', { type: 'language', payload: { language: currentLanguage } })
+
+    // Inject drag-and-drop handler so the user can drop .docx/.pdf onto the editor
+    void view.webContents.executeJavaScript(`
+      (function() {
+        const el = document.body;
+        if (el.__leandixDropRegistered) return;
+        el.__leandixDropRegistered = true;
+
+        el.addEventListener('dragover', function(e) {
+          const hasFile = e.dataTransfer && Array.from(e.dataTransfer.items).some(i => i.kind === 'file');
+          if (hasFile) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+          }
+        });
+
+        el.addEventListener('drop', function(e) {
+          const files = e.dataTransfer && e.dataTransfer.files;
+          if (!files || files.length === 0) return;
+          const supported = Array.from(files).filter(f => {
+            const name = f.name.toLowerCase();
+            return name.endsWith('.docx') || name.endsWith('.pdf');
+          });
+          if (supported.length === 0) return;
+          e.preventDefault();
+          // Send each file path to main via IPC (path is available in Electron)
+          supported.forEach(f => {
+            if (f.path) {
+              if (window.leandixApp) window.leandixApp.dropFile(f.path);
+            }
+          });
+        });
+      })();
+    `).catch(() => { /* webview may be destroyed */ })
+
     if (filePath) {
       void loadAndSendFileToTab(id, filePath)
     }
@@ -808,6 +865,19 @@ function createWindow(initialFilePath?: string): void {
 
   mainWindow.on('resize', updateLayout)
 
+  // Main window drag & drop: intercept file:// navigation caused by OS drop
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://')) return
+    let filePath: string
+    try {
+      filePath = decodeURIComponent(new URL(url).pathname)
+      if (process.platform === 'win32' && filePath.startsWith('/')) filePath = filePath.slice(1)
+    } catch { return }
+    if (!isSupportedDroppedFile(filePath)) return
+    event.preventDefault()
+    void handleDroppedFile(filePath)
+  })
+
   createAppMenu()
 
   mainWindow.on('close', (event) => {
@@ -972,6 +1042,13 @@ function registerIpcHandlers(): void {
       pendingOpenFilePath = null
       void openFileInTab(p, mode)
     }
+  })
+
+  // Drag & Drop file open (Feature 1.5)
+  // Fired when the user drops a .docx or .pdf file onto an editor WebContentsView.
+  ipcMain.on('drop-file', (_event, filePath: string) => {
+    if (typeof filePath !== 'string' || !isSupportedDroppedFile(filePath)) return
+    void handleDroppedFile(filePath)
   })
 }
 
@@ -1603,6 +1680,95 @@ function createAppMenu(): void {
 
   const menu = Menu.buildFromTemplate(template)
   Menu.setApplicationMenu(menu)
+}
+
+// ---------------------------------------------------------------------------
+// Drag & Drop File Open (1.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate that a dropped file path has an extension the app can open.
+ */
+function isSupportedDroppedFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase()
+  return ext === '.docx' || ext === '.pdf'
+}
+
+/**
+ * Register drag-and-drop handlers on a BrowserWindow's webContents.
+ * When the user drops a .docx or .pdf file onto the window, we open it
+ * in a new tab (or prompt replace/new if the editor window is ready).
+ */
+function registerDropHandlerOnWindow(win: BrowserWindow): void {
+  // Electron fires will-navigate when the webContents would navigate to a
+  // file:// URL as a result of the user dropping a file onto the window.
+  win.webContents.on('will-navigate', (event, url) => {
+    // Only intercept file:// drops (Electron turns a dropped file into a
+    // file:// navigation request on the main webContents when there is no
+    // explicit drop handler).
+    if (!url.startsWith('file://')) return
+
+    let filePath: string
+    try {
+      // Convert file URL → OS path
+      filePath = decodeURIComponent(new URL(url).pathname)
+      // Windows: strip leading slash from /C:/...
+      if (process.platform === 'win32' && filePath.startsWith('/')) {
+        filePath = filePath.slice(1)
+      }
+    } catch {
+      return
+    }
+
+    if (!isSupportedDroppedFile(filePath)) return
+
+    event.preventDefault()
+    void handleDroppedFile(filePath)
+  })
+
+  // Also cover the case where Electron's default behavior is suppressed but
+  // the drop event still bubbles to the native layer.  We use the
+  // `webContents.on('did-finish-load')` opportunity to inject a JS handler
+  // that forwards dragged file paths over IPC.
+}
+
+/**
+ * Open a dropped file in the editor.  If the editor window is already open
+ * we ask the user "New tab or replace current tab?" — same flow as
+ * showOpenFileDialog.  If the editor window is not yet open we launch it.
+ */
+async function handleDroppedFile(filePath: string): Promise<void> {
+  // Home window drop → open editor
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    openEditorFromHome(filePath)
+    return
+  }
+
+  mainWindow.show()
+  mainWindow.focus()
+
+  if (tabs.size === 0) {
+    const ext = path.extname(filePath).toLowerCase()
+    if (ext === '.pdf') createPdfTab(filePath)
+    else createEditorTab(filePath)
+    return
+  }
+
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    title: currentLanguage === 'vi' ? 'Mở file' : 'Open file',
+    message: currentLanguage === 'vi'
+      ? `Mở "${path.basename(filePath)}" trong:`
+      : `Open "${path.basename(filePath)}" in:`,
+    buttons: currentLanguage === 'vi'
+      ? ['Tab mới', 'Thay thế tab hiện tại', 'Hủy']
+      : ['New tab', 'Replace current tab', 'Cancel'],
+    defaultId: 0,
+    cancelId: 2,
+  })
+
+  if (response === 2) return
+  void openFileInTab(filePath, response === 0 ? 'new' : 'replace')
 }
 
 // ---------------------------------------------------------------------------

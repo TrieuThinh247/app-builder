@@ -18,3 +18,11 @@ contextBridge.exposeInMainWorld('acquireVsCodeApi', () => vscodeShim)
 ipcRenderer.on('host-message', (_event, message) => {
   window.postMessage(message, '*')
 })
+
+// Drag & Drop file open (Feature 1.5)
+// Exposed so the renderer can forward dropped file paths to the main process.
+contextBridge.exposeInMainWorld('leandixApp', {
+  dropFile: (filePath: string): void => {
+    ipcRenderer.send('drop-file', filePath)
+  },
+})
