@@ -492,6 +492,21 @@ body {
   color: var(--accent-purple);
 }
 
+.editor-home-open-pdf-card {
+  border-style: solid;
+  border-color: var(--eh-border);
+}
+
+.editor-home-open-pdf-card:hover {
+  border-color: #ef4444;
+  background: #fff1f2;
+  color: #ef4444;
+}
+
+[data-theme="dark"] .editor-home-open-pdf-card:hover {
+  background: #2d1a1a;
+}
+
 .editor-home-new-card:hover .editor-home-new-icon {
   opacity: 1;
 }

@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import * as path from 'path'
 
 const vscodeShim = {
   postMessage: (message: unknown): void => {
@@ -15,10 +14,6 @@ const vscodeShim = {
 }
 
 contextBridge.exposeInMainWorld('acquireVsCodeApi', () => vscodeShim)
-
-const pdfWorkerPath = path.join(__dirname, '..', 'pdf-webview', 'pdf.worker.min.mjs')
-const pdfWorkerUrl = `file://${pdfWorkerPath.replace(/\\/g, '/')}`
-contextBridge.exposeInMainWorld('__PDF_WORKER_URL__', pdfWorkerUrl)
 
 ipcRenderer.on('host-message', (_event, message) => {
   window.postMessage(message, '*')

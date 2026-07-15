@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('homeApi', {
   openFileDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-file-dialog-from-home')
   },
+  openPdfDialog: (): Promise<string | null> => {
+    return ipcRenderer.invoke('open-pdf-dialog-from-home')
+  },
   getRecentFiles: (): Promise<Array<{ filePath: string; title: string; lastOpenedAt: string }>> => {
     return ipcRenderer.invoke('get-recent-files')
   },

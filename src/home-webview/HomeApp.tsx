@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { FileText, Globe, WifiOff, Loader, Plus, Clock, Settings, Moon, Sun } from 'lucide-react'
+import { FileText, Globe, WifiOff, Loader, Plus, Clock, Settings, Moon, Sun, BookOpen } from 'lucide-react'
 import logoUrl from '../logo/logo_final.png'
 
 type Screen = 'checking' | 'offline' | 'online' | 'editor-home'
@@ -25,6 +25,7 @@ declare global {
       getSettings: () => Promise<{ language: Lang; theme: Theme }>
       applySettings: (settings: { language: Lang; theme: Theme }) => void
       openFileDialog: () => Promise<string | null>
+      openPdfDialog: () => Promise<string | null>
       getRecentFiles: () => Promise<RecentFile[]>
     }
   }
@@ -41,7 +42,8 @@ const STRINGS = {
     atlasDesc: 'Sử dụng AI tại atlas.leandix.com',
     offlineNote: 'Chế độ offline chỉ hỗ trợ chỉnh sửa văn bản.',
     newDoc: 'Tài liệu trống',
-    openDoc: 'Mở file...',
+    openDoc: 'Mở DOCX...',
+    openPdf: 'Mở PDF...',
     recentDocs: 'Tài liệu gần đây',
     noRecent: 'Chưa có tài liệu nào được mở gần đây.',
     back: '← Trang chủ',
@@ -63,7 +65,8 @@ const STRINGS = {
     atlasDesc: 'Use AI at atlas.leandix.com',
     offlineNote: 'Offline mode supports text editing only.',
     newDoc: 'Blank document',
-    openDoc: 'Open file...',
+    openDoc: 'Open DOCX...',
+    openPdf: 'Open PDF...',
     recentDocs: 'Recent documents',
     noRecent: 'No documents opened recently.',
     back: '← Home',
@@ -106,6 +109,18 @@ function DocIcon() {
       <rect x="6" y="14" width="16" height="1.5" rx="0.75" fill="#4285f4" opacity="0.4" />
       <rect x="6" y="18" width="16" height="1.5" rx="0.75" fill="#4285f4" opacity="0.4" />
       <rect x="6" y="22" width="11" height="1.5" rx="0.75" fill="#4285f4" opacity="0.4" />
+    </svg>
+  )
+}
+
+function PdfIcon() {
+  return (
+    <svg width="28" height="36" viewBox="0 0 28 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="28" height="36" rx="3" fill="#ef4444" opacity="0.12" />
+      <rect x="3" y="3" width="22" height="30" rx="2" fill="#fee2e2" />
+      <path d="M18 3v7h7" fill="none" stroke="#ef4444" strokeWidth="1" opacity="0.5" />
+      <path d="M18 3l7 7H18V3z" fill="#fecaca" />
+      <text x="14" y="25" textAnchor="middle" fontSize="7" fontWeight="700" fill="#ef4444" opacity="0.8" fontFamily="sans-serif">PDF</text>
     </svg>
   )
 }
@@ -232,6 +247,13 @@ function EditorHomeScreen({
             <div className="editor-home-new-icon"><FileText size={22} strokeWidth={1.5} /></div>
             <span>{s.openDoc}</span>
           </button>
+          <button className="editor-home-new-card editor-home-open-pdf-card" onClick={async () => {
+            const filePath = await window.homeApi.openPdfDialog()
+            if (filePath) window.homeApi.openEditorWithFile(filePath)
+          }}>
+            <div className="editor-home-new-icon"><BookOpen size={22} strokeWidth={1.5} /></div>
+            <span>{s.openPdf}</span>
+          </button>
         </div>
 
         {/* Recent files */}
@@ -256,7 +278,7 @@ function EditorHomeScreen({
                 title={file.filePath}
               >
                 <div className="editor-home-list-icon">
-                  <DocIcon />
+                  {file.filePath.toLowerCase().endsWith('.pdf') ? <PdfIcon /> : <DocIcon />}
                 </div>
                 <div className="editor-home-list-info">
                   <span className="editor-home-list-name">{file.title}</span>

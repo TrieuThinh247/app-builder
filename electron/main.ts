@@ -260,7 +260,9 @@ function openEditorFromHome(filePath?: string): void {
     mainWindow.focus()
     homeWindow?.close()
     if (filePath) {
-      createEditorTab(filePath)
+      const ext = path.extname(filePath).toLowerCase()
+      if (ext === '.pdf') createPdfTab(filePath)
+      else createEditorTab(filePath)
     }
     return
   }
@@ -854,6 +856,18 @@ function registerIpcHandlers(): void {
     return result.filePaths[0]
   })
 
+  ipcMain.handle('open-pdf-dialog-from-home', async () => {
+    if (!homeWindow || homeWindow.isDestroyed()) return null
+    const result = await dialog.showOpenDialog(homeWindow, {
+      filters: [
+        { name: 'PDF Files', extensions: ['pdf'] },
+      ],
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
   ipcMain.handle('get-recent-files', () => {
     return loadRecentFiles()
   })
@@ -922,8 +936,15 @@ function registerIpcHandlers(): void {
 
   ipcMain.on('tab-bar-ready', () => {
     if (tabs.size === 0) {
-      createEditorTab(pendingInitialFilePath ?? undefined)
+      const p = pendingInitialFilePath
       pendingInitialFilePath = null
+      if (p) {
+        const ext = path.extname(p).toLowerCase()
+        if (ext === '.pdf') createPdfTab(p)
+        else createEditorTab(p)
+      } else {
+        createEditorTab()
+      }
     } else {
       pushTabState()
     }

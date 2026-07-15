@@ -12,12 +12,11 @@
   },
   "scripts": {
     "build:webview": "vite build --config vite.config-electron.ts",
-    "build:pdf-webview": "vite build --config vite.config.pdf-electron.ts",
     "build:home-webview": "vite build --config vite.config-home.ts",
     "build:electron-main": "node esbuild.electron-main.mjs",
     "build:electron-preload": "node esbuild.electron-preload.mjs",
     "copy:tab-bar": "node -e \"require('fs').cpSync('./src/tab-bar', './out/tab-bar', {recursive:true})\"",
-    "build:electron": "npm run build:webview && npm run build:pdf-webview && npm run build:home-webview && npm run build:electron-main && npm run build:electron-preload && node copy-pdfjs.mjs && npm run copy:tab-bar",
+    "build:electron": "npm run build:webview && npm run build:home-webview && npm run build:electron-main && npm run build:electron-preload && node copy-pdfjs.mjs && npm run copy:tab-bar",
     "electron:dev": "npm run build:electron && .\\node_modules\\electron\\dist\\electron.exe out/electron/main.js",
     "electron:dist": "npm run build:electron && npx electron-builder"
   },
@@ -29,8 +28,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^1.24.0",
     "mammoth": "^1.8.0",
-    "marked": "^15.0.12",
-    "pdfjs-dist": "^4.9.124"
+    "marked": "^15.0.12"
   },
   "devDependencies": {
     "@tiptap/core": "^3.22.5",
