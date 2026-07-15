@@ -1184,256 +1184,16 @@ function getGoogleFontsLinks(html: string): string {
   return links
 }
 
-function buildPrintHtml(
-  bodyHtml: string,
-  pageSettings: typeof DEFAULT_PAGE_SETTINGS,
-  headerHtml: string,
-  footerHtml: string,
-  defaultFont: string,
-  defaultFontSize: number,
-  cssContent: string
-): string {
-  const googleFontsLinks = getGoogleFontsLinks(bodyHtml)
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Export PDF</title>
-  ${googleFontsLinks}
-  <style>${cssContent}</style>
-  <style>
-    @page {
-      size: ${pageSettings.pageWidth}mm ${pageSettings.pageHeight}mm;
-      margin: 0;
-    }
-    html, body {
-      overflow: visible !important;
-      height: auto !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      background: white !important;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-    .leandix-page-surround {
-      display: block !important;
-      width: 100% !important;
-      height: auto !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      background: white !important;
-    }
-    .leandix-page-view {
-      box-shadow: none !important;
-      border: none !important;
-      margin: 0 auto !important;
-      display: flex !important;
-      flex-direction: column !important;
-      page-break-after: always !important;
-      break-after: page !important;
-      overflow: hidden !important;
-    }
-    .leandix-header-footer-separator { display: none !important; }
-    .page-break {
-      page-break-after: always !important;
-      break-after: page !important;
-      border: none !important;
-      height: 0 !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      background: transparent !important;
-    }
-    .page-break::after, .page-break::before { display: none !important; }
-  </style>
-</head>
-<body>
-  <div id="raw-content" style="display:none;">${bodyHtml}</div>
-  <div class="leandix-page-surround" id="pages-container"></div>
-  <script>
-  (function() {
-    const pageWidth = ${pageSettings.pageWidth};
-    const pageHeight = ${pageSettings.pageHeight};
-    const marginTop = ${pageSettings.marginTop};
-    const marginBottom = ${pageSettings.marginBottom};
-    const marginLeft = ${pageSettings.marginLeft};
-    const marginRight = ${pageSettings.marginRight};
-    const defaultFont = ${JSON.stringify(defaultFont)};
-    const defaultFontSize = ${defaultFontSize};
-    const headerHtml = ${JSON.stringify(headerHtml)};
-    const footerHtml = ${JSON.stringify(footerHtml)};
-    const mmToPx = (mm) => mm * (96 / 25.4);
-    const containerWidthPx = Math.round(mmToPx(pageWidth));
-    const containerHeightPx = Math.round(mmToPx(pageHeight));
-    const paddingTopPx = Math.round(mmToPx(marginTop));
-    const paddingBottomPx = Math.round(mmToPx(marginBottom));
-    const paddingLeftPx = Math.round(mmToPx(marginLeft));
-    const paddingRightPx = Math.round(mmToPx(marginRight));
-    const contentAreaWidthPx = containerWidthPx - paddingLeftPx - paddingRightPx;
-    const headerHeight = headerHtml ? 40 : 0;
-    const footerHeight = footerHtml ? 40 : 0;
-    const contentAreaHeightPx = containerHeightPx - paddingTopPx - paddingBottomPx - headerHeight - footerHeight;
-    const sandbox = document.createElement('div');
-    sandbox.className = 'leandix-atlas-content';
-    sandbox.style.position = 'absolute';
-    sandbox.style.top = '-9999px';
-    sandbox.style.left = '-9999px';
-    sandbox.style.width = contentAreaWidthPx + 'px';
-    const fontStr = defaultFont.includes(' ') && !defaultFont.startsWith("'") && !defaultFont.startsWith('"') ? "'" + defaultFont + "'" : defaultFont;
-    sandbox.style.setProperty('--leandix-default-font', fontStr);
-    sandbox.style.setProperty('--leandix-default-font-size', defaultFontSize + 'pt');
-    const sandboxEditor = document.createElement('div');
-    sandboxEditor.className = 'leandix-prosemirror tiptap';
-    sandbox.appendChild(sandboxEditor);
-    document.body.appendChild(sandbox);
-    const rawContent = document.getElementById('raw-content');
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = rawContent.innerHTML;
-    const BLOCK_TAGS = new Set(['P','H1','H2','H3','H4','H5','H6']);
-    tempDiv.querySelectorAll('p,h1,h2,h3,h4,h5,h6').forEach((el) => {
-      if (BLOCK_TAGS.has(el.tagName) && el.childNodes.length === 0) el.appendChild(document.createElement('br'));
-    });
-    const nodes = Array.from(tempDiv.childNodes);
-    const pages = [[]];
-    let currentPageIdx = 0;
-    let tempPage = document.createElement('div');
-    tempPage.style.width = contentAreaWidthPx + 'px';
-    tempPage.style.display = 'flow-root';
-    sandboxEditor.appendChild(tempPage);
-    for (const node of nodes) {
-      if (node.nodeType === Node.TEXT_NODE && !node.textContent.trim()) continue;
-      const clonedNode = node.cloneNode(true);
-      const isManualPageBreak = clonedNode.nodeType === Node.ELEMENT_NODE &&
-        (clonedNode.classList.contains('page-break') || (clonedNode.tagName === 'HR' && clonedNode.classList.contains('page-break')));
-      if (isManualPageBreak) {
-        tempPage = document.createElement('div');
-        tempPage.style.width = contentAreaWidthPx + 'px';
-        tempPage.style.display = 'flow-root';
-        sandboxEditor.appendChild(tempPage);
-        pages.push([]);
-        currentPageIdx++;
-        continue;
-      }
-      tempPage.appendChild(clonedNode);
-      if (tempPage.offsetHeight > contentAreaHeightPx) {
-        tempPage.removeChild(clonedNode);
-        if (clonedNode.tagName === 'TABLE') {
-          const tableShell = clonedNode.cloneNode(false);
-          const colgroup = clonedNode.querySelector('colgroup');
-          const rows = Array.from(clonedNode.querySelectorAll('tr')).filter(r => r.closest('table') === clonedNode);
-          let currentTable = tableShell.cloneNode(true);
-          if (colgroup) currentTable.appendChild(colgroup.cloneNode(true));
-          tempPage.appendChild(currentTable);
-          for (const row of rows) {
-            const rowClone = row.cloneNode(true);
-            currentTable.appendChild(rowClone);
-            if (tempPage.offsetHeight > contentAreaHeightPx) {
-              currentTable.removeChild(rowClone);
-              if (currentTable.querySelectorAll('tr').length > 0) pages[currentPageIdx].push(currentTable.outerHTML);
-              tempPage = document.createElement('div');
-              tempPage.style.width = contentAreaWidthPx + 'px';
-              tempPage.style.display = 'flow-root';
-              sandboxEditor.appendChild(tempPage);
-              pages.push([]);
-              currentPageIdx++;
-              currentTable = tableShell.cloneNode(true);
-              if (colgroup) currentTable.appendChild(colgroup.cloneNode(true));
-              tempPage.appendChild(currentTable);
-              currentTable.appendChild(rowClone);
-            }
-          }
-          if (currentTable.querySelectorAll('tr').length > 0) pages[currentPageIdx].push(currentTable.outerHTML);
-        } else if (clonedNode.tagName === 'UL' || clonedNode.tagName === 'OL') {
-          const listShell = clonedNode.cloneNode(false);
-          const items = Array.from(clonedNode.children).filter(c => c.tagName === 'LI');
-          let currentList = listShell.cloneNode(true);
-          tempPage.appendChild(currentList);
-          let itemIndex = 1;
-          for (const item of items) {
-            const itemClone = item.cloneNode(true);
-            currentList.appendChild(itemClone);
-            if (tempPage.offsetHeight > contentAreaHeightPx) {
-              currentList.removeChild(itemClone);
-              if (currentList.children.length > 0) pages[currentPageIdx].push(currentList.outerHTML);
-              tempPage = document.createElement('div');
-              tempPage.style.width = contentAreaWidthPx + 'px';
-              tempPage.style.display = 'flow-root';
-              sandboxEditor.appendChild(tempPage);
-              pages.push([]);
-              currentPageIdx++;
-              currentList = listShell.cloneNode(true);
-              if (clonedNode.tagName === 'OL') currentList.setAttribute('start', String(itemIndex));
-              tempPage.appendChild(currentList);
-              currentList.appendChild(itemClone);
-            }
-            itemIndex++;
-          }
-          if (currentList.children.length > 0) pages[currentPageIdx].push(currentList.outerHTML);
-        } else {
-          tempPage = document.createElement('div');
-          tempPage.style.width = contentAreaWidthPx + 'px';
-          tempPage.style.display = 'flow-root';
-          sandboxEditor.appendChild(tempPage);
-          pages.push([]);
-          currentPageIdx++;
-          tempPage.appendChild(clonedNode);
-          pages[currentPageIdx].push(clonedNode.outerHTML);
-        }
-      } else {
-        pages[currentPageIdx].push(clonedNode.outerHTML);
-      }
-    }
-    document.body.removeChild(sandbox);
-    const formatHF = (markup, pageNum, totalPages) => {
-      if (!markup) return '';
-      return markup.replace(/\{page\}/g, String(pageNum)).replace(/\{total\}/g, String(totalPages));
-    };
-    const container = document.getElementById('pages-container');
-    const totalPages = pages.length;
-    pages.forEach((pageElements, index) => {
-      const pageNum = index + 1;
-      const pageDiv = document.createElement('div');
-      pageDiv.className = 'leandix-page-view page-preview-sheet';
-      pageDiv.style.cssText = 'width:' + pageWidth + 'mm;height:' + pageHeight + 'mm;padding-top:' + marginTop + 'mm;padding-bottom:' + marginBottom + 'mm;padding-left:' + marginLeft + 'mm;padding-right:' + marginRight + 'mm;box-sizing:border-box;position:relative;background:white;display:flex;flex-direction:column;page-break-after:always;break-after:page;overflow:hidden;';
-      if (headerHtml) {
-        const headerDiv = document.createElement('div');
-        headerDiv.className = 'leandix-header-section read-only';
-        headerDiv.style.cssText = 'height:' + headerHeight + 'px;border-bottom:1px dashed #e2e8f0;margin-bottom:12px;font-size:9pt;color:#64748b;display:flex;align-items:center;overflow:hidden;';
-        headerDiv.innerHTML = formatHF(headerHtml, pageNum, totalPages);
-        pageDiv.appendChild(headerDiv);
-      }
-      const contentDiv = document.createElement('div');
-      contentDiv.className = 'leandix-atlas-content leandix-prosemirror tiptap read-only';
-      contentDiv.style.cssText = 'flex-grow:1;width:100%;overflow:visible;outline:none;';
-      const pageFontStr = defaultFont.includes(' ') && !defaultFont.startsWith("'") && !defaultFont.startsWith('"') ? "'" + defaultFont + "'" : defaultFont;
-      contentDiv.style.setProperty('--leandix-default-font', pageFontStr);
-      contentDiv.style.setProperty('--leandix-default-font-size', defaultFontSize + 'pt');
-      pageElements.forEach(html => {
-        const el = document.createElement('div');
-        el.innerHTML = html;
-        contentDiv.appendChild(el);
-      });
-      pageDiv.appendChild(contentDiv);
-      if (footerHtml) {
-        const footerDiv = document.createElement('div');
-        footerDiv.className = 'leandix-footer-section read-only';
-        footerDiv.style.cssText = 'height:' + footerHeight + 'px;border-top:1px dashed #e2e8f0;margin-top:12px;font-size:9pt;color:#64748b;display:flex;align-items:center;overflow:hidden;';
-        footerDiv.innerHTML = formatHF(footerHtml, pageNum, totalPages);
-        pageDiv.appendChild(footerDiv);
-      }
-      container.appendChild(pageDiv);
-    });
-  })();
-  </script>
-</body>
-</html>`
-}
-
 async function exportToPdf(): Promise<void> {
   if (!mainWindow || mainWindow.isDestroyed()) return
 
   const activeTab = activeTabId ? tabs.get(activeTabId) : null
-  const docState = activeTab?.documentState
+  if (!activeTab) {
+    dialog.showErrorBox('Lỗi xuất PDF', 'Vui lòng mở hoặc tạo tài liệu trước khi xuất PDF.')
+    return
+  }
 
+  const docState = activeTab.documentState
   if (!docState?.fileContentHtml) {
     dialog.showErrorBox('Lỗi xuất PDF', 'Vui lòng mở hoặc tạo tài liệu trước khi xuất PDF.')
     return
@@ -1466,18 +1226,225 @@ async function exportToPdf(): Promise<void> {
   const pageSettings = docState.fileExtras.pageSettings ?? DEFAULT_PAGE_SETTINGS
   const headerHtml = docState.fileExtras.headerHtml ?? ''
   const footerHtml = docState.fileExtras.footerHtml ?? ''
-  const defaultFont = docState.fileExtras.defaultFont ?? 'Times New Roman'
-  const defaultFontSize = docState.fileExtras.defaultFontSize ?? 12
+
+  // Run pagination engine directly in webview context — same logic as PagePreview.tsx
+  let pagesHtml = ''
+  try {
+    const pw = pageSettings.pageWidth
+    const ph = pageSettings.pageHeight
+    const mt = pageSettings.marginTop
+    const mb = pageSettings.marginBottom
+    const ml = pageSettings.marginLeft
+    const mr = pageSettings.marginRight
+    const hHtml = JSON.stringify(headerHtml)
+    const fHtml = JSON.stringify(footerHtml)
+
+    pagesHtml = await activeTab.view.webContents.executeJavaScript(`
+      (function() {
+        const mmToPx = mm => mm * (96 / 25.4);
+        const pw = ${pw}, ph = ${ph}, mt = ${mt}, mb = ${mb}, ml = ${ml}, mr = ${mr};
+        const containerWidthPx  = Math.round(mmToPx(pw));
+        const containerHeightPx = Math.round(mmToPx(ph));
+        const paddingTopPx    = Math.round(mmToPx(mt));
+        const paddingBottomPx = Math.round(mmToPx(mb));
+        const paddingLeftPx   = Math.round(mmToPx(ml));
+        const paddingRightPx  = Math.round(mmToPx(mr));
+        const contentAreaWidthPx = containerWidthPx - paddingLeftPx - paddingRightPx;
+        const headerHtml = ${hHtml};
+        const footerHtml = ${fHtml};
+        const hHeight = headerHtml ? 40 : 0;
+        const fHeight = footerHtml ? 40 : 0;
+        const contentAreaHeightPx = containerHeightPx - paddingTopPx - paddingBottomPx - hHeight - fHeight;
+
+        // Find live editor DOM
+        const proseMirror = document.querySelector('.ProseMirror');
+        if (!proseMirror) return '';
+
+        const clone = proseMirror.cloneNode(true);
+        ['.ProseMirror-gapcursor','.ProseMirror-separator','.ProseMirror-widget',
+         '.column-resize-handle','.leandix-drag-handle','.grip-column','.grip-row',
+         '.grip-table','[data-drag-handle]'].forEach(sel => {
+          clone.querySelectorAll(sel).forEach(el => el.remove());
+        });
+        clone.querySelectorAll('.selectedCell').forEach(el => el.classList.remove('selectedCell'));
+        clone.querySelectorAll('.ProseMirror-selectednode').forEach(el => el.classList.remove('ProseMirror-selectednode'));
+
+        // Get CSS vars from live editor
+        const editorEl = document.querySelector('.leandix-atlas-content') || document.body;
+        const editorStyle = getComputedStyle(editorEl);
+
+        // Build off-screen sandbox
+        const wrapper = document.createElement('div');
+        wrapper.className = 'leandix-atlas-content';
+        wrapper.style.fontFamily = editorStyle.fontFamily;
+        wrapper.style.setProperty('--leandix-default-font', editorStyle.getPropertyValue('--leandix-default-font'));
+        wrapper.style.setProperty('--leandix-default-font-size', editorStyle.getPropertyValue('--leandix-default-font-size'));
+        wrapper.style.position = 'absolute';
+        wrapper.style.top = '-9999px';
+        wrapper.style.left = '-9999px';
+        wrapper.style.width = contentAreaWidthPx + 'px';
+        const sandbox = document.createElement('div');
+        sandbox.className = 'leandix-prosemirror tiptap';
+        wrapper.appendChild(sandbox);
+        document.body.appendChild(wrapper);
+
+        const nodes = [];
+        while (clone.firstChild) nodes.push(clone.removeChild(clone.firstChild));
+
+        const paginatedHtmlList = [[]];
+        let currentPageIdx = 0;
+        let tempPage = document.createElement('div');
+        tempPage.style.width = contentAreaWidthPx + 'px';
+        sandbox.appendChild(tempPage);
+
+        for (const node of nodes) {
+          if (node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()) continue;
+          const el = node;
+          const isBreak = el.nodeType === Node.ELEMENT_NODE &&
+            (el.classList?.contains('page-break') || (el.tagName === 'HR' && el.classList?.contains('page-break')));
+          if (isBreak) {
+            tempPage = document.createElement('div'); tempPage.style.width = contentAreaWidthPx + 'px'; sandbox.appendChild(tempPage);
+            paginatedHtmlList.push([]); currentPageIdx++; continue;
+          }
+          tempPage.appendChild(el);
+          if (tempPage.offsetHeight > contentAreaHeightPx) {
+            tempPage.removeChild(el);
+            const isTableWrapper = el.nodeType === Node.ELEMENT_NODE && el.classList?.contains('tableWrapper');
+            const innerTable = isTableWrapper ? el.querySelector('table') : (el.tagName === 'TABLE' ? el : null);
+            if (innerTable) {
+              const shellClone = () => {
+                if (isTableWrapper) { const tw = el.cloneNode(false); const t = innerTable.cloneNode(false); const cg = innerTable.querySelector('colgroup'); if (cg) t.appendChild(cg.cloneNode(true)); tw.appendChild(t); return tw; }
+                const t = innerTable.cloneNode(false); const cg = innerTable.querySelector('colgroup'); if (cg) t.appendChild(cg.cloneNode(true)); return t;
+              };
+              const getTable = s => isTableWrapper ? s.querySelector('table') : s;
+              const rows = Array.from(innerTable.querySelectorAll('tr')).filter(r => r.closest('table') === innerTable);
+              let currentShell = shellClone(); tempPage.appendChild(currentShell);
+              for (const row of rows) {
+                getTable(currentShell).appendChild(row);
+                if (tempPage.offsetHeight > contentAreaHeightPx) {
+                  getTable(currentShell).removeChild(row);
+                  if (getTable(currentShell).querySelectorAll('tr').length > 0) paginatedHtmlList[currentPageIdx].push(currentShell.outerHTML);
+                  tempPage = document.createElement('div'); tempPage.style.width = contentAreaWidthPx + 'px'; sandbox.appendChild(tempPage);
+                  paginatedHtmlList.push([]); currentPageIdx++;
+                  currentShell = shellClone(); tempPage.appendChild(currentShell); getTable(currentShell).appendChild(row);
+                }
+              }
+              if (getTable(currentShell).querySelectorAll('tr').length > 0) paginatedHtmlList[currentPageIdx].push(currentShell.outerHTML);
+            } else if (el.tagName === 'UL' || el.tagName === 'OL') {
+              const listShell = el.cloneNode(false);
+              const items = Array.from(el.children).filter(c => c.tagName === 'LI');
+              let currentList = listShell.cloneNode(true); tempPage.appendChild(currentList);
+              let itemIndex = 1;
+              for (const item of items) {
+                currentList.appendChild(item);
+                if (tempPage.offsetHeight > contentAreaHeightPx) {
+                  currentList.removeChild(item);
+                  if (currentList.children.length > 0) paginatedHtmlList[currentPageIdx].push(currentList.outerHTML);
+                  tempPage = document.createElement('div'); tempPage.style.width = contentAreaWidthPx + 'px'; sandbox.appendChild(tempPage);
+                  paginatedHtmlList.push([]); currentPageIdx++;
+                  currentList = listShell.cloneNode(true);
+                  if (el.tagName === 'OL') currentList.setAttribute('start', String(itemIndex));
+                  tempPage.appendChild(currentList); currentList.appendChild(item);
+                }
+                itemIndex++;
+              }
+              if (currentList.children.length > 0) paginatedHtmlList[currentPageIdx].push(currentList.outerHTML);
+            } else {
+              tempPage = document.createElement('div'); tempPage.style.width = contentAreaWidthPx + 'px'; sandbox.appendChild(tempPage);
+              paginatedHtmlList.push([]); currentPageIdx++;
+              tempPage.appendChild(el);
+              paginatedHtmlList[currentPageIdx].push(el.nodeType === Node.ELEMENT_NODE ? el.outerHTML : el.textContent || '');
+            }
+          } else {
+            paginatedHtmlList[currentPageIdx].push(el.nodeType === Node.ELEMENT_NODE ? el.outerHTML : el.textContent || '');
+          }
+        }
+        document.body.removeChild(wrapper);
+
+        const totalPages = paginatedHtmlList.length;
+        const formatHF = (markup, pageNum) =>
+          markup.replace(/\\{page\\}/g, String(pageNum)).replace(/\\{total\\}/g, String(totalPages));
+
+        return paginatedHtmlList.map((pageElements, index) => {
+          const pageNum = index + 1;
+          const ptTop = paddingTopPx + (headerHtml ? hHeight + 12 : 0);
+          const ptBottom = paddingBottomPx + (footerHtml ? fHeight + 12 : 0);
+          return '<div class="leandix-page-view page-preview-sheet" style="width:' + containerWidthPx + 'px;height:' + containerHeightPx + 'px;padding-top:' + ptTop + 'px;padding-bottom:' + ptBottom + 'px;padding-left:' + paddingLeftPx + 'px;padding-right:' + paddingRightPx + 'px;box-sizing:border-box;position:relative;background:white;overflow:hidden;">'
+            + (headerHtml ? '<div class="leandix-header-section read-only" style="position:absolute;top:' + paddingTopPx + 'px;left:' + paddingLeftPx + 'px;right:' + paddingRightPx + 'px;height:' + hHeight + 'px;border-bottom:1px dashed #e2e8f0;font-size:9pt;color:#64748b;display:flex;align-items:center;overflow:hidden;">' + formatHF(headerHtml, pageNum) + '</div>' : '')
+            + '<div class="leandix-atlas-content leandix-prosemirror tiptap read-only" style="width:100%;overflow:visible;outline:none;">' + pageElements.join('') + '</div>'
+            + (footerHtml ? '<div class="leandix-footer-section read-only" style="position:absolute;bottom:' + paddingBottomPx + 'px;left:' + paddingLeftPx + 'px;right:' + paddingRightPx + 'px;height:' + fHeight + 'px;border-top:1px dashed #e2e8f0;font-size:9pt;color:#64748b;display:flex;align-items:center;overflow:hidden;">' + formatHF(footerHtml, pageNum) + '</div>' : '')
+            + '</div>';
+        }).join('\\n');
+      })()
+    `)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    dialog.showErrorBox('Lỗi xuất PDF', 'Không lấy được nội dung từ editor: ' + msg)
+    return
+  }
+
+  if (!pagesHtml) {
+    dialog.showErrorBox('Lỗi xuất PDF', 'Không tìm thấy nội dung editor. Hãy mở tài liệu trước khi xuất PDF.')
+    return
+  }
+
+  const googleFontsLinks = getGoogleFontsLinks(docState.fileContentHtml)
+
+  const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Export PDF</title>
+  ${googleFontsLinks}
+  <style>${cssContent}</style>
+  <style>
+    @page {
+      size: ${pageSettings.pageWidth}mm ${pageSettings.pageHeight}mm;
+      margin: 0;
+    }
+    /* Override editor.css which sets overflow:hidden and height:100% on body —
+       those styles clip content to one page when printing. */
+    html, body {
+      height: auto !important;
+      overflow: visible !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: white !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .page-preview-scale-wrapper {
+      display: none !important;
+    }
+    .page-preview-sheet {
+      box-shadow: none !important;
+      transform: none !important;
+      position: relative !important;
+      page-break-after: always !important;
+      break-after: page !important;
+      overflow: hidden !important;
+    }
+  </style>
+</head>
+<body>
+${pagesHtml}
+</body>
+</html>`
+
+  const tempDir = path.join(os.tmpdir(), `leandix-pdf-${Date.now()}`)
+  const tempHtmlPath = path.join(tempDir, 'document.html')
 
   if (!browserPath) {
-    // Fallback: use Electron printToPDF with a warning
+    // Fallback: use Electron printToPDF
     await dialog.showMessageBox(mainWindow, {
       type: 'warning',
       title: 'Không tìm thấy trình duyệt',
-      message: 'Không tìm thấy Microsoft Edge hoặc Google Chrome. Sẽ xuất PDF bằng phương pháp dự phòng — header/footer và phân trang có thể không chính xác.',
+      message: 'Không tìm thấy Microsoft Edge hoặc Google Chrome. Sẽ xuất PDF bằng phương pháp dự phòng — kết quả có thể không chính xác.',
       buttons: ['Tiếp tục'],
     })
     try {
+      fsSync.mkdirSync(tempDir, { recursive: true })
+      fsSync.writeFileSync(tempHtmlPath, fullHtml, 'utf-8')
       const pdfBuffer = await mainWindow.webContents.printToPDF({
         pageSize: { width: pageSettings.pageWidth * 1000, height: pageSettings.pageHeight * 1000 },
         printBackground: true,
@@ -1492,26 +1459,14 @@ async function exportToPdf(): Promise<void> {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
       dialog.showErrorBox('Lỗi xuất PDF', message)
+    } finally {
+      try { fsSync.rmSync(tempDir, { recursive: true, force: true }) } catch { /* ignore */ }
     }
     return
   }
 
-  // Headless Chrome/Edge export
-  const tempDir = path.join(os.tmpdir(), `leandix-pdf-${Date.now()}`)
-  const tempHtmlPath = path.join(tempDir, 'document.html')
-
   try {
     fsSync.mkdirSync(tempDir, { recursive: true })
-
-    const fullHtml = buildPrintHtml(
-      docState.fileContentHtml,
-      pageSettings,
-      headerHtml,
-      footerHtml,
-      defaultFont,
-      defaultFontSize,
-      cssContent
-    )
     fsSync.writeFileSync(tempHtmlPath, fullHtml, 'utf-8')
 
     const fileUrl = `file:///${tempHtmlPath.replace(/\\/g, '/')}`
@@ -1539,11 +1494,7 @@ async function exportToPdf(): Promise<void> {
     const message = err instanceof Error ? err.message : String(err)
     dialog.showErrorBox('Lỗi xuất PDF', message)
   } finally {
-    try {
-      fsSync.rmSync(tempDir, { recursive: true, force: true })
-    } catch {
-      // ignore cleanup errors
-    }
+    try { fsSync.rmSync(tempDir, { recursive: true, force: true }) } catch { /* ignore */ }
   }
 }
 
