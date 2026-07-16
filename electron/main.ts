@@ -1224,8 +1224,12 @@ async function exportToPdf(): Promise<void> {
   }
 
   const pageSettings = docState.fileExtras.pageSettings ?? DEFAULT_PAGE_SETTINGS
-  const headerHtml = docState.fileExtras.headerHtml ?? ''
-  const footerHtml = docState.fileExtras.footerHtml ?? ''
+  // Treat Tiptap's empty-editor placeholder ('<p></p>') the same as '' so we
+  // don't reserve header/footer space (and resize content area) for empty sections.
+  const rawHeaderHtml = docState.fileExtras.headerHtml ?? ''
+  const rawFooterHtml = docState.fileExtras.footerHtml ?? ''
+  const headerHtml = rawHeaderHtml && rawHeaderHtml.replace(/<[^>]+>/g, '').trim() ? rawHeaderHtml : ''
+  const footerHtml = rawFooterHtml && rawFooterHtml.replace(/<[^>]+>/g, '').trim() ? rawFooterHtml : ''
 
   // Run pagination engine directly in webview context — same logic as PagePreview.tsx
   let pagesHtml = ''
@@ -1252,9 +1256,7 @@ async function exportToPdf(): Promise<void> {
         const contentAreaWidthPx = containerWidthPx - paddingLeftPx - paddingRightPx;
         const headerHtml = ${hHtml};
         const footerHtml = ${fHtml};
-        const hHeight = headerHtml ? 40 : 0;
-        const fHeight = footerHtml ? 40 : 0;
-        const contentAreaHeightPx = containerHeightPx - paddingTopPx - paddingBottomPx - hHeight - fHeight;
+        const contentAreaHeightPx = containerHeightPx - paddingTopPx - paddingBottomPx;
 
         // Find live editor DOM
         const proseMirror = document.querySelector('.ProseMirror');
@@ -1367,12 +1369,10 @@ async function exportToPdf(): Promise<void> {
 
         return paginatedHtmlList.map((pageElements, index) => {
           const pageNum = index + 1;
-          const ptTop = paddingTopPx + (headerHtml ? hHeight + 12 : 0);
-          const ptBottom = paddingBottomPx + (footerHtml ? fHeight + 12 : 0);
-          return '<div class="leandix-page-view page-preview-sheet" style="width:' + containerWidthPx + 'px;height:' + containerHeightPx + 'px;padding-top:' + ptTop + 'px;padding-bottom:' + ptBottom + 'px;padding-left:' + paddingLeftPx + 'px;padding-right:' + paddingRightPx + 'px;box-sizing:border-box;position:relative;background:white;overflow:hidden;">'
-            + (headerHtml ? '<div class="leandix-header-section read-only" style="position:absolute;top:' + paddingTopPx + 'px;left:' + paddingLeftPx + 'px;right:' + paddingRightPx + 'px;height:' + hHeight + 'px;border-bottom:1px dashed #e2e8f0;font-size:9pt;color:#64748b;display:flex;align-items:center;overflow:hidden;">' + formatHF(headerHtml, pageNum) + '</div>' : '')
+          return '<div class="leandix-page-view page-preview-sheet" style="width:' + containerWidthPx + 'px;height:' + containerHeightPx + 'px;padding-top:' + paddingTopPx + 'px;padding-bottom:' + paddingBottomPx + 'px;padding-left:' + paddingLeftPx + 'px;padding-right:' + paddingRightPx + 'px;box-sizing:border-box;position:relative;background:white;overflow:hidden;">'
+            + (headerHtml ? '<div class="leandix-header-section read-only" style="position:absolute;top:0;left:0;right:0;height:' + paddingTopPx + 'px;padding-left:' + paddingLeftPx + 'px;padding-right:' + paddingRightPx + 'px;box-sizing:border-box;border-bottom:1px solid #e2e8f0;font-size:9pt;color:#64748b;display:flex;align-items:center;overflow:hidden;">' + formatHF(headerHtml, pageNum) + '</div>' : '')
             + '<div class="leandix-atlas-content leandix-prosemirror tiptap read-only" style="width:100%;overflow:visible;outline:none;">' + pageElements.join('') + '</div>'
-            + (footerHtml ? '<div class="leandix-footer-section read-only" style="position:absolute;bottom:' + paddingBottomPx + 'px;left:' + paddingLeftPx + 'px;right:' + paddingRightPx + 'px;height:' + fHeight + 'px;border-top:1px dashed #e2e8f0;font-size:9pt;color:#64748b;display:flex;align-items:center;overflow:hidden;">' + formatHF(footerHtml, pageNum) + '</div>' : '')
+            + (footerHtml ? '<div class="leandix-footer-section read-only" style="position:absolute;bottom:0;left:0;right:0;height:' + paddingBottomPx + 'px;padding-left:' + paddingLeftPx + 'px;padding-right:' + paddingRightPx + 'px;box-sizing:border-box;border-top:1px solid #e2e8f0;font-size:9pt;color:#64748b;display:flex;align-items:center;overflow:hidden;">' + formatHF(footerHtml, pageNum) + '</div>' : '')
             + '</div>';
         }).join('\\n');
       })()
