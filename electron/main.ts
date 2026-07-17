@@ -163,6 +163,9 @@ let pendingOpenFilePath: string | null = null
 /** File path to open when the first editor window is created */
 let pendingInitialFilePath: string | null = null
 
+/** Pending PDF export resolve callbacks keyed by tabId */
+const pendingPdfExports = new Map<string, (html: string) => void>()
+
 const _initialSettings = loadSettings()
 /** Current UI language */
 let currentLanguage: 'vi' | 'en' = _initialSettings.language
@@ -833,6 +836,17 @@ async function handleVsCodeMessageForTab(tabId: string, message: unknown): Promi
       break
     }
 
+    case 'exportPdfHtml': {
+      const payload = msg.payload as Record<string, unknown> | undefined
+      const html = typeof payload?.html === 'string' ? payload.html : ''
+      const resolve = pendingPdfExports.get(tabId)
+      if (resolve) {
+        pendingPdfExports.delete(tabId)
+        resolve(html)
+      }
+      break
+    }
+
     default:
       break
   }
@@ -1231,152 +1245,25 @@ async function exportToPdf(): Promise<void> {
   const headerHtml = rawHeaderHtml && rawHeaderHtml.replace(/<[^>]+>/g, '').trim() ? rawHeaderHtml : ''
   const footerHtml = rawFooterHtml && rawFooterHtml.replace(/<[^>]+>/g, '').trim() ? rawFooterHtml : ''
 
-  // Run pagination engine directly in webview context — same logic as PagePreview.tsx
+  // Run pagination via webview — same as VS Code extension flow.
+  // We send an 'exportPdf' message and wait for the webview's onExportPdf
+  // handler (App.tsx) to respond with 'exportPdfHtml' containing the fully
+  // paginated, header/footer-aware HTML.
   let pagesHtml = ''
   try {
-    const pw = pageSettings.pageWidth
-    const ph = pageSettings.pageHeight
-    const mt = pageSettings.marginTop
-    const mb = pageSettings.marginBottom
-    const ml = pageSettings.marginLeft
-    const mr = pageSettings.marginRight
-    const hHtml = JSON.stringify(headerHtml)
-    const fHtml = JSON.stringify(footerHtml)
+    pagesHtml = await new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        pendingPdfExports.delete(activeTab.id)
+        reject(new Error('Timeout waiting for exportPdfHtml from webview'))
+      }, 30000)
 
-    pagesHtml = await activeTab.view.webContents.executeJavaScript(`
-      (function() {
-        const mmToPx = mm => mm * (96 / 25.4);
-        const pw = ${pw}, ph = ${ph}, mt = ${mt}, mb = ${mb}, ml = ${ml}, mr = ${mr};
-        const containerWidthPx  = Math.round(mmToPx(pw));
-        const containerHeightPx = Math.round(mmToPx(ph));
-        const paddingTopPx    = Math.round(mmToPx(mt));
-        const paddingBottomPx = Math.round(mmToPx(mb));
-        const paddingLeftPx   = Math.round(mmToPx(ml));
-        const paddingRightPx  = Math.round(mmToPx(mr));
-        const contentAreaWidthPx = containerWidthPx - paddingLeftPx - paddingRightPx;
-        const headerHtml = ${hHtml};
-        const footerHtml = ${fHtml};
-        const contentAreaHeightPx = containerHeightPx - paddingTopPx - paddingBottomPx;
+      pendingPdfExports.set(activeTab.id, (html: string) => {
+        clearTimeout(timeout)
+        resolve(html)
+      })
 
-        // Find live editor DOM
-        const proseMirror = document.querySelector('.ProseMirror');
-        if (!proseMirror) return '';
-
-        const clone = proseMirror.cloneNode(true);
-        ['.ProseMirror-gapcursor','.ProseMirror-separator','.ProseMirror-widget',
-         '.column-resize-handle','.leandix-drag-handle','.grip-column','.grip-row',
-         '.grip-table','[data-drag-handle]'].forEach(sel => {
-          clone.querySelectorAll(sel).forEach(el => el.remove());
-        });
-        clone.querySelectorAll('.selectedCell').forEach(el => el.classList.remove('selectedCell'));
-        clone.querySelectorAll('.ProseMirror-selectednode').forEach(el => el.classList.remove('ProseMirror-selectednode'));
-
-        // Get CSS vars from live editor
-        const editorEl = document.querySelector('.leandix-atlas-content') || document.body;
-        const editorStyle = getComputedStyle(editorEl);
-
-        // Build off-screen sandbox
-        const wrapper = document.createElement('div');
-        wrapper.className = 'leandix-atlas-content';
-        wrapper.style.fontFamily = editorStyle.fontFamily;
-        wrapper.style.setProperty('--leandix-default-font', editorStyle.getPropertyValue('--leandix-default-font'));
-        wrapper.style.setProperty('--leandix-default-font-size', editorStyle.getPropertyValue('--leandix-default-font-size'));
-        wrapper.style.position = 'absolute';
-        wrapper.style.top = '-9999px';
-        wrapper.style.left = '-9999px';
-        wrapper.style.width = contentAreaWidthPx + 'px';
-        const sandbox = document.createElement('div');
-        sandbox.className = 'leandix-prosemirror tiptap';
-        wrapper.appendChild(sandbox);
-        document.body.appendChild(wrapper);
-
-        const nodes = [];
-        while (clone.firstChild) nodes.push(clone.removeChild(clone.firstChild));
-
-        const paginatedHtmlList = [[]];
-        let currentPageIdx = 0;
-        let tempPage = document.createElement('div');
-        tempPage.style.width = contentAreaWidthPx + 'px';
-        sandbox.appendChild(tempPage);
-
-        for (const node of nodes) {
-          if (node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()) continue;
-          const el = node;
-          const isBreak = el.nodeType === Node.ELEMENT_NODE &&
-            (el.classList?.contains('page-break') || (el.tagName === 'HR' && el.classList?.contains('page-break')));
-          if (isBreak) {
-            tempPage = document.createElement('div'); tempPage.style.width = contentAreaWidthPx + 'px'; sandbox.appendChild(tempPage);
-            paginatedHtmlList.push([]); currentPageIdx++; continue;
-          }
-          tempPage.appendChild(el);
-          if (tempPage.offsetHeight > contentAreaHeightPx) {
-            tempPage.removeChild(el);
-            const isTableWrapper = el.nodeType === Node.ELEMENT_NODE && el.classList?.contains('tableWrapper');
-            const innerTable = isTableWrapper ? el.querySelector('table') : (el.tagName === 'TABLE' ? el : null);
-            if (innerTable) {
-              const shellClone = () => {
-                if (isTableWrapper) { const tw = el.cloneNode(false); const t = innerTable.cloneNode(false); const cg = innerTable.querySelector('colgroup'); if (cg) t.appendChild(cg.cloneNode(true)); tw.appendChild(t); return tw; }
-                const t = innerTable.cloneNode(false); const cg = innerTable.querySelector('colgroup'); if (cg) t.appendChild(cg.cloneNode(true)); return t;
-              };
-              const getTable = s => isTableWrapper ? s.querySelector('table') : s;
-              const rows = Array.from(innerTable.querySelectorAll('tr')).filter(r => r.closest('table') === innerTable);
-              let currentShell = shellClone(); tempPage.appendChild(currentShell);
-              for (const row of rows) {
-                getTable(currentShell).appendChild(row);
-                if (tempPage.offsetHeight > contentAreaHeightPx) {
-                  getTable(currentShell).removeChild(row);
-                  if (getTable(currentShell).querySelectorAll('tr').length > 0) paginatedHtmlList[currentPageIdx].push(currentShell.outerHTML);
-                  tempPage = document.createElement('div'); tempPage.style.width = contentAreaWidthPx + 'px'; sandbox.appendChild(tempPage);
-                  paginatedHtmlList.push([]); currentPageIdx++;
-                  currentShell = shellClone(); tempPage.appendChild(currentShell); getTable(currentShell).appendChild(row);
-                }
-              }
-              if (getTable(currentShell).querySelectorAll('tr').length > 0) paginatedHtmlList[currentPageIdx].push(currentShell.outerHTML);
-            } else if (el.tagName === 'UL' || el.tagName === 'OL') {
-              const listShell = el.cloneNode(false);
-              const items = Array.from(el.children).filter(c => c.tagName === 'LI');
-              let currentList = listShell.cloneNode(true); tempPage.appendChild(currentList);
-              let itemIndex = 1;
-              for (const item of items) {
-                currentList.appendChild(item);
-                if (tempPage.offsetHeight > contentAreaHeightPx) {
-                  currentList.removeChild(item);
-                  if (currentList.children.length > 0) paginatedHtmlList[currentPageIdx].push(currentList.outerHTML);
-                  tempPage = document.createElement('div'); tempPage.style.width = contentAreaWidthPx + 'px'; sandbox.appendChild(tempPage);
-                  paginatedHtmlList.push([]); currentPageIdx++;
-                  currentList = listShell.cloneNode(true);
-                  if (el.tagName === 'OL') currentList.setAttribute('start', String(itemIndex));
-                  tempPage.appendChild(currentList); currentList.appendChild(item);
-                }
-                itemIndex++;
-              }
-              if (currentList.children.length > 0) paginatedHtmlList[currentPageIdx].push(currentList.outerHTML);
-            } else {
-              tempPage = document.createElement('div'); tempPage.style.width = contentAreaWidthPx + 'px'; sandbox.appendChild(tempPage);
-              paginatedHtmlList.push([]); currentPageIdx++;
-              tempPage.appendChild(el);
-              paginatedHtmlList[currentPageIdx].push(el.nodeType === Node.ELEMENT_NODE ? el.outerHTML : el.textContent || '');
-            }
-          } else {
-            paginatedHtmlList[currentPageIdx].push(el.nodeType === Node.ELEMENT_NODE ? el.outerHTML : el.textContent || '');
-          }
-        }
-        document.body.removeChild(wrapper);
-
-        const totalPages = paginatedHtmlList.length;
-        const formatHF = (markup, pageNum) =>
-          markup.replace(/\\{page\\}/g, String(pageNum)).replace(/\\{total\\}/g, String(totalPages));
-
-        return paginatedHtmlList.map((pageElements, index) => {
-          const pageNum = index + 1;
-          return '<div class="leandix-page-view page-preview-sheet" style="width:' + containerWidthPx + 'px;height:' + containerHeightPx + 'px;padding-top:' + paddingTopPx + 'px;padding-bottom:' + paddingBottomPx + 'px;padding-left:' + paddingLeftPx + 'px;padding-right:' + paddingRightPx + 'px;box-sizing:border-box;position:relative;background:white;overflow:hidden;">'
-            + (headerHtml ? '<div class="leandix-header-section read-only" style="position:absolute;top:0;left:0;right:0;height:' + paddingTopPx + 'px;padding-left:' + paddingLeftPx + 'px;padding-right:' + paddingRightPx + 'px;box-sizing:border-box;border-bottom:1px solid #e2e8f0;font-size:9pt;color:#64748b;display:flex;align-items:center;overflow:hidden;">' + formatHF(headerHtml, pageNum) + '</div>' : '')
-            + '<div class="leandix-atlas-content leandix-prosemirror tiptap read-only" style="width:100%;overflow:visible;outline:none;">' + pageElements.join('') + '</div>'
-            + (footerHtml ? '<div class="leandix-footer-section read-only" style="position:absolute;bottom:0;left:0;right:0;height:' + paddingBottomPx + 'px;padding-left:' + paddingLeftPx + 'px;padding-right:' + paddingRightPx + 'px;box-sizing:border-box;border-top:1px solid #e2e8f0;font-size:9pt;color:#64748b;display:flex;align-items:center;overflow:hidden;">' + formatHF(footerHtml, pageNum) + '</div>' : '')
-            + '</div>';
-        }).join('\\n');
-      })()
-    `)
+      activeTab.view.webContents.send('host-message', { type: 'exportPdf', payload: {} })
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     dialog.showErrorBox('Lỗi xuất PDF', 'Không lấy được nội dung từ editor: ' + msg)
