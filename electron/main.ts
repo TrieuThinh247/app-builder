@@ -378,6 +378,7 @@ function createEditorTab(filePath?: string): string {
       nodeIntegration: false,
       sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
+      backgroundThrottling: false,  // keep rendering at full rate even when unfocused
     },
   })
   view.webContents.loadFile(path.join(__dirname, '..', 'webview', 'index.html'))
@@ -1614,6 +1615,15 @@ async function handleDroppedFile(filePath: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 let isQuitting = false
+
+// ── GPU / rendering flags ──────────────────────────────────────────────────
+// Must be called before app.whenReady() — these switches configure the
+// Chromium renderer process before it starts.
+app.commandLine.appendSwitch('enable-smooth-scrolling')
+app.commandLine.appendSwitch('enable-gpu-rasterization')   // rasterize on GPU
+app.commandLine.appendSwitch('enable-zero-copy')           // zero-copy texture upload
+app.commandLine.appendSwitch('disable-software-rasterizer') // force GPU path
+app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder,Vulkan,DefaultANGLEVulkan,VulkanFromANGLE')
 
 app.whenReady().then(() => {
   registerIpcHandlers()
