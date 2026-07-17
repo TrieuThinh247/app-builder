@@ -136,6 +136,8 @@ interface Tab {
   documentState: TabDocumentState
   isDirty: boolean
   view: WebContentsView
+  /** HTML content to pre-load when the tab's webview sends 'ready' (templates) */
+  pendingTemplateHtml?: string
 }
 
 interface TabStateSnapshot {
@@ -295,6 +297,30 @@ function openEditorFromHome(filePath?: string): void {
   homeWindow?.close()
 }
 
+function openEditorFromHomeWithTemplate(templateId: string): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show()
+    mainWindow.focus()
+    homeWindow?.close()
+    createEditorTab(undefined, templateId)
+    return
+  }
+  // No main window yet — create it, then the first blank tab will pick up
+  // the template via pendingTemplateHtml set in createEditorTab
+  homeWindow?.close()
+  createWindow(undefined)
+  // createWindow calls createEditorTab(pendingInitialFilePath) which won't
+  // have the templateId. Re-create with template once window is ready.
+  // Simpler: just call createEditorTab with templateId after window exists.
+  // createWindow is synchronous (window creation is sync), so tabs may already exist.
+  // Close the blank tab that createWindow may have created and open a template one.
+  // Actually the cleanest approach: create window normally, then createEditorTab with template.
+  // The initial blank tab is created lazily by tab-bar-ready, so we just call:
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    createEditorTab(undefined, templateId)
+  }
+}
+
 function openAtlasWebWindow(): void {
   if (atlasWindow && !atlasWindow.isDestroyed()) {
     atlasWindow.show()
@@ -366,10 +392,34 @@ function openAtlasWebWindow(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Template HTML helpers
+// ---------------------------------------------------------------------------
+
+/** Returns starter HTML for a named template in the current UI language. */
+function getTemplateHtml(templateId: string, lang: 'vi' | 'en'): string {
+  switch (templateId) {
+    case 'report':
+      return lang === 'vi'
+        ? '<h1>Báo cáo</h1><h2>1. Giới thiệu</h2><p>Nội dung giới thiệu...</p><h2>2. Nội dung chính</h2><p>Nội dung chính...</p><h2>3. Kết luận</h2><p>Kết luận...</p>'
+        : '<h1>Report</h1><h2>1. Introduction</h2><p>Introduction content...</p><h2>2. Main Content</h2><p>Main content...</p><h2>3. Conclusion</h2><p>Conclusion...</p>'
+    case 'letter':
+      return lang === 'vi'
+        ? '<p style="text-align:right">Ngày ... tháng ... năm ...</p><p><strong>Kính gửi:</strong> ...</p><p>Nội dung thư...</p><p>Trân trọng,</p><p><strong>Người gửi</strong></p>'
+        : '<p style="text-align:right">Date ... Month ... Year ...</p><p><strong>To:</strong> ...</p><p>Letter content...</p><p>Best regards,</p><p><strong>Sender</strong></p>'
+    case 'notes':
+      return lang === 'vi'
+        ? '<h1>Ghi chú</h1><ul><li>Mục 1</li><li>Mục 2</li><li>Mục 3</li></ul>'
+        : '<h1>Notes</h1><ul><li>Item 1</li><li>Item 2</li><li>Item 3</li></ul>'
+    default: // 'blank' or unknown
+      return '<p></p>'
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tab Creation / Activation
 // ---------------------------------------------------------------------------
 
-function createEditorTab(filePath?: string): string {
+function createEditorTab(filePath?: string, templateId?: string): string {
   if (!mainWindow || mainWindow.isDestroyed()) return ''
   const id = crypto.randomUUID()
   const view = new WebContentsView({
@@ -379,6 +429,7 @@ function createEditorTab(filePath?: string): string {
       sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
       backgroundThrottling: false,  // keep rendering at full rate even when unfocused
+      spellChecker: true,           // enable native OS spell checker
     },
   })
   view.webContents.loadFile(path.join(__dirname, '..', 'webview', 'index.html'))
@@ -386,10 +437,11 @@ function createEditorTab(filePath?: string): string {
   const tab: Tab = {
     id,
     type: 'editor',
-    title: filePath ? path.basename(filePath) : 'Tài liệu mới',
+    title: filePath ? path.basename(filePath) : (currentLanguage === 'vi' ? 'Tài liệu mới' : 'New Document'),
     documentState: { currentFilePath: filePath ?? null, fileContentHtml: '', fileExtras: {} },
     isDirty: false,
     view,
+    pendingTemplateHtml: (!filePath && templateId) ? getTemplateHtml(templateId, currentLanguage) : undefined,
   }
   tabs.set(id, tab)
   mainWindow.contentView.addChildView(view)
@@ -743,10 +795,12 @@ async function handleVsCodeMessageForTab(tabId: string, message: unknown): Promi
       if (tab.documentState.currentFilePath) {
         await loadAndSendFileToTab(tabId, tab.documentState.currentFilePath)
       } else {
+        const templateHtml = tab.pendingTemplateHtml ?? ''
+        tab.pendingTemplateHtml = undefined  // consume once
         tab.view.webContents.send('host-message', {
           type: 'load',
           payload: {
-            html: '',
+            html: templateHtml,
             warnings: [],
             headerHtml: '',
             footerHtml: '',
@@ -984,11 +1038,13 @@ function registerIpcHandlers(): void {
     createAppMenu()
   })
 
-  ipcMain.on('home-action', (_event, message: { type: string; filePath?: string }) => {
+  ipcMain.on('home-action', (_event, message: { type: string; filePath?: string; templateId?: string }) => {
     if (message.type === 'open-editor') {
       openEditorFromHome(message.filePath)
     } else if (message.type === 'open-editor-new') {
       openEditorFromHome()
+    } else if (message.type === 'open-editor-template') {
+      openEditorFromHomeWithTemplate(message.templateId ?? 'blank')
     } else if (message.type === 'open-atlas-web') {
       openAtlasWebWindow()
     } else if (message.type === 'toggle-language') {

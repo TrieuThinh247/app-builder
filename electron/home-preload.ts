@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('homeApi', {
   openEditorWithFile: (filePath: string) => {
     ipcRenderer.send('home-action', { type: 'open-editor', filePath })
   },
+  openEditorFromTemplate: (templateId: string) => {
+    ipcRenderer.send('home-action', { type: 'open-editor-template', templateId })
+  },
   openAtlasWeb: () => {
     ipcRenderer.send('home-action', { type: 'open-atlas-web' })
   },

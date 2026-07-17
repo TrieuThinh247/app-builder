@@ -19,6 +19,7 @@ declare global {
       openEditor: () => void
       openEditorNew: () => void
       openEditorWithFile: (filePath: string) => void
+      openEditorFromTemplate: (templateId: string) => void
       openAtlasWeb: () => void
       onLanguage: (cb: (lang: string) => void) => void
       onTheme: (cb: (theme: string) => void) => void
@@ -54,6 +55,10 @@ const STRINGS = {
     settingsLang: 'Ngôn ngữ',
     settingsApply: 'Áp dụng',
     settingsCancel: 'Hủy',
+    templates: 'Mẫu tài liệu',
+    tplReport: 'Báo cáo',
+    tplLetter: 'Thư / Đơn',
+    tplNotes: 'Ghi chú',
   },
   en: {
     checking: 'Checking connection...',
@@ -77,6 +82,10 @@ const STRINGS = {
     settingsLang: 'Language',
     settingsApply: 'Apply',
     settingsCancel: 'Cancel',
+    templates: 'Templates',
+    tplReport: 'Report',
+    tplLetter: 'Letter',
+    tplNotes: 'Notes',
   },
 }
 
@@ -254,6 +263,28 @@ function EditorHomeScreen({
             <div className="editor-home-new-icon"><BookOpen size={22} strokeWidth={1.5} /></div>
             <span>{s.openPdf}</span>
           </button>
+        </div>
+
+        {/* Templates */}
+        <div className="editor-home-section-header">
+          <span className="editor-home-section-label">{s.templates}</span>
+        </div>
+        <div className="editor-home-templates">
+          {[
+            { id: 'report', label: s.tplReport, icon: '📊' },
+            { id: 'letter', label: s.tplLetter, icon: '✉️' },
+            { id: 'notes',  label: s.tplNotes,  icon: '📝' },
+          ].map(tpl => (
+            <button
+              key={tpl.id}
+              className="editor-home-tpl-card"
+              onClick={() => window.homeApi.openEditorFromTemplate(tpl.id)}
+              title={tpl.label}
+            >
+              <span className="editor-home-tpl-icon">{tpl.icon}</span>
+              <span className="editor-home-tpl-label">{tpl.label}</span>
+            </button>
+          ))}
         </div>
 
         {/* Recent files */}
