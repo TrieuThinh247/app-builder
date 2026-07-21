@@ -797,6 +797,22 @@ async function handleVsCodeMessageForTab(tabId: string, message: unknown): Promi
       } else {
         const templateHtml = tab.pendingTemplateHtml ?? ''
         tab.pendingTemplateHtml = undefined  // consume once
+
+        // Serialize a blank document then parse it back so defaults (font, size,
+        // spacing, pageSettings) come from the actual XML DocxSerializer generates.
+        let defaultFont = 'Aptos'
+        let defaultFontSize = 12
+        let resolvedPageSettings = DEFAULT_PAGE_SETTINGS
+        try {
+          const blankBuffer = await serializeToDocx(templateHtml)
+          const parsed = await parseDocx(blankBuffer as unknown as Buffer)
+          if (parsed.metadata?.defaultFont) defaultFont = parsed.metadata.defaultFont
+          if (parsed.metadata?.defaultFontSize) defaultFontSize = parsed.metadata.defaultFontSize
+          resolvedPageSettings = parsed.pageSettings ?? DEFAULT_PAGE_SETTINGS
+        } catch {
+          // keep fallback values above
+        }
+
         tab.view.webContents.send('host-message', {
           type: 'load',
           payload: {
@@ -805,9 +821,9 @@ async function handleVsCodeMessageForTab(tabId: string, message: unknown): Promi
             headerHtml: '',
             footerHtml: '',
             comments: [],
-            pageSettings: DEFAULT_PAGE_SETTINGS,
+            pageSettings: resolvedPageSettings,
             language: currentLanguage,
-            metadata: { defaultFont: 'Aptos', defaultFontSize: 12 },
+            metadata: { defaultFont, defaultFontSize },
           },
         })
       }
