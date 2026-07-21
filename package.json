@@ -18,7 +18,9 @@
     "copy:tab-bar": "node -e \"require('fs').cpSync('./src/tab-bar', './out/tab-bar', {recursive:true})\"",
     "build:electron": "npm run build:webview && npm run build:home-webview && npm run build:electron-main && npm run build:electron-preload && node copy-pdfjs.mjs && npm run copy:tab-bar",
     "electron:dev": "npm run build:electron && .\\node_modules\\electron\\dist\\electron.exe out/electron/main.js",
-    "electron:dist": "npm run build:electron && npx electron-builder"
+    "electron:dist": "npm run build:electron && npx electron-builder",
+    "electron:dist:win": "npm run build:electron && npx electron-builder --win",
+    "electron:dist:mac": "npm run build:electron && npx electron-builder --mac"
   },
   "dependencies": {
     "docx": "^9.0.2",
