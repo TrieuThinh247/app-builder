@@ -21,7 +21,7 @@
   },
   "mac": {
     "target": "dmg",
-    "icon": "../extension/media/atlas.ico"
+    "icon": "../extension/media/atlas-mac.png"
   },
   "nsis": {
     "oneClick": false,
