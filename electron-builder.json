@@ -17,11 +17,11 @@
   ],
   "win": {
     "target": "nsis",
-    "icon": "../extension/media/leandix-icon.png"
+    "icon": "../extension/media/atlas.ico"
   },
   "mac": {
     "target": "dmg",
-    "icon": "../extension/media/leandix-icon.png"
+    "icon": "../extension/media/atlas.ico"
   },
   "nsis": {
     "oneClick": false,
