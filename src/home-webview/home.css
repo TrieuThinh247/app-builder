@@ -633,14 +633,17 @@ body {
 }
 
 .editor-home-tpl-icon {
-  font-size: 1.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-blue);
   line-height: 1;
 }
 
 .editor-home-tpl-label {
   font-size: 0.72rem;
   font-weight: 600;
-  color: var(--eh-text-primary, #1e293b);
+  color: var(--eh-text);
   text-align: center;
   line-height: 1.2;
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { FileText, Globe, WifiOff, Loader, Plus, Clock, Settings, Moon, Sun, BookOpen } from 'lucide-react'
+import { FileText, Globe, WifiOff, Loader, Plus, Clock, Settings, Moon, Sun, BookOpen, BarChart2, Mail, NotebookPen } from 'lucide-react'
 import logoUrl from '../logo/logo_final.png'
 
 type Screen = 'checking' | 'offline' | 'online' | 'editor-home'
@@ -271,9 +271,9 @@ function EditorHomeScreen({
         </div>
         <div className="editor-home-templates">
           {[
-            { id: 'report', label: s.tplReport, icon: '📊' },
-            { id: 'letter', label: s.tplLetter, icon: '✉️' },
-            { id: 'notes',  label: s.tplNotes,  icon: '📝' },
+            { id: 'report', label: s.tplReport, icon: <BarChart2 size={22} strokeWidth={1.5} /> },
+            { id: 'letter', label: s.tplLetter, icon: <Mail size={22} strokeWidth={1.5} /> },
+            { id: 'notes',  label: s.tplNotes,  icon: <NotebookPen size={22} strokeWidth={1.5} /> },
           ].map(tpl => (
             <button
               key={tpl.id}
