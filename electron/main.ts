@@ -707,7 +707,10 @@ async function loadAndSendFileToTab(tabId: string, filePath: string): Promise<vo
         metadata: {
           defaultFont: parsed.metadata?.defaultFont ?? 'Times New Roman',
           defaultFontSize: parsed.metadata?.defaultFontSize ?? 13,
+          defaultLineSpacing: parsed.metadata?.defaultLineSpacing,
+          defaultSpacingAfter: parsed.metadata?.defaultSpacingAfter,
         },
+        footnotes: parsed.footnotes ?? [],
       },
     })
   } catch (err: unknown) {
