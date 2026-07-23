@@ -12,10 +12,6 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      # Tạo cấu trúc giống local:
-      #   workspace/
-      #     app-builder/   ← repo này
-      #     extension/     ← editor-extension repo
       - name: Checkout app-builder
         uses: actions/checkout@v4
         with:
@@ -33,12 +29,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Show workspace structure
-        shell: pwsh
-        run: Get-ChildItem -Recurse -Depth 2 ${{ github.workspace }}
-
-      - name: Install dependencies
+      - name: Install app-builder dependencies
         working-directory: app-builder
+        run: npm ci
+
+      - name: Install extension dependencies
+        working-directory: extension
         run: npm ci
 
       - name: Build app
@@ -74,8 +70,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install app-builder dependencies
         working-directory: app-builder
+        run: npm ci
+
+      - name: Install extension dependencies
+        working-directory: extension
         run: npm ci
 
       - name: Build app
@@ -111,11 +111,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Show workspace structure
-        run: find ${{ github.workspace }} -maxdepth 3 -not -path '*/node_modules/*' | sort
-
-      - name: Install dependencies
+      - name: Install app-builder dependencies
         working-directory: app-builder
+        run: npm ci
+
+      - name: Install extension dependencies
+        working-directory: extension
         run: npm ci
 
       - name: Build app
