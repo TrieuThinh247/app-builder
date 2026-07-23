@@ -1,6 +1,5 @@
 name: Build & Release
 
-# Trigger khi push tag dạng v1.0.7
 on:
   push:
     tags:
@@ -13,7 +12,15 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      # Checkout extension vào subfolder 'extension/'
+      # Tạo cấu trúc giống local:
+      #   workspace/
+      #     app-builder/   ← repo này
+      #     extension/     ← editor-extension repo
+      - name: Checkout app-builder
+        uses: actions/checkout@v4
+        with:
+          path: app-builder
+
       - name: Checkout extension
         uses: actions/checkout@v4
         with:
@@ -21,18 +28,14 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           path: extension
 
-      # Checkout app-builder vào subfolder 'app-builder/'
-      # → cấu trúc: workspace/extension/ và workspace/app-builder/
-      # → ../extension từ app-builder/ trỏ đúng vào extension/
-      - name: Checkout app-builder
-        uses: actions/checkout@v4
-        with:
-          path: app-builder
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Show workspace structure
+        shell: pwsh
+        run: Get-ChildItem -Recurse -Depth 2 ${{ github.workspace }}
 
       - name: Install dependencies
         working-directory: app-builder
@@ -54,17 +57,17 @@ jobs:
   build-mac:
     runs-on: macos-latest
     steps:
+      - name: Checkout app-builder
+        uses: actions/checkout@v4
+        with:
+          path: app-builder
+
       - name: Checkout extension
         uses: actions/checkout@v4
         with:
           repository: leandix-ai/editor-extension
           token: ${{ secrets.GH_TOKEN }}
           path: extension
-
-      - name: Checkout app-builder
-        uses: actions/checkout@v4
-        with:
-          path: app-builder
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -91,6 +94,11 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout app-builder
+        uses: actions/checkout@v4
+        with:
+          path: app-builder
+
       - name: Checkout extension
         uses: actions/checkout@v4
         with:
@@ -98,15 +106,13 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           path: extension
 
-      - name: Checkout app-builder
-        uses: actions/checkout@v4
-        with:
-          path: app-builder
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Show workspace structure
+        run: find ${{ github.workspace }} -maxdepth 3 -not -path '*/node_modules/*' | sort
 
       - name: Install dependencies
         working-directory: app-builder
