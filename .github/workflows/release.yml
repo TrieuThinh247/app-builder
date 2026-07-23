@@ -13,9 +13,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - name: Checkout app-builder
-        uses: actions/checkout@v4
-
+      # Checkout extension trước vào subfolder 'extension'
       - name: Checkout extension (private repo)
         uses: actions/checkout@v4
         with:
@@ -23,18 +21,29 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           path: extension
 
+      # Checkout app-builder vào subfolder 'app-builder'
+      # → cấu trúc: workspace/extension/ và workspace/app-builder/
+      # → ../extension từ app-builder trỏ đúng vào extension
+      - name: Checkout app-builder
+        uses: actions/checkout@v4
+        with:
+          path: app-builder
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install dependencies
+        working-directory: app-builder
         run: npm ci
 
       - name: Build app
+        working-directory: app-builder
         run: npm run build:electron
 
       - name: Package & publish Windows installer
+        working-directory: app-builder
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npx electron-builder --win --publish always
@@ -45,9 +54,6 @@ jobs:
   build-mac:
     runs-on: macos-latest
     steps:
-      - name: Checkout app-builder
-        uses: actions/checkout@v4
-
       - name: Checkout extension (private repo)
         uses: actions/checkout@v4
         with:
@@ -55,18 +61,26 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           path: extension
 
+      - name: Checkout app-builder
+        uses: actions/checkout@v4
+        with:
+          path: app-builder
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install dependencies
+        working-directory: app-builder
         run: npm ci
 
       - name: Build app
+        working-directory: app-builder
         run: npm run build:electron
 
       - name: Package & publish macOS installer
+        working-directory: app-builder
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npx electron-builder --mac --publish always
@@ -77,9 +91,6 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout app-builder
-        uses: actions/checkout@v4
-
       - name: Checkout extension (private repo)
         uses: actions/checkout@v4
         with:
@@ -87,18 +98,26 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           path: extension
 
+      - name: Checkout app-builder
+        uses: actions/checkout@v4
+        with:
+          path: app-builder
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install dependencies
+        working-directory: app-builder
         run: npm ci
 
       - name: Build app
+        working-directory: app-builder
         run: npm run build:electron
 
       - name: Package & publish Linux installer
+        working-directory: app-builder
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npx electron-builder --linux --publish always
