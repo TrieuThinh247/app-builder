@@ -16,7 +16,10 @@
     "out/tab-bar/**/*"
   ],
   "win": {
-    "target": "nsis",
+    "target": {
+      "target": "nsis",
+      "arch": ["x64", "ia32", "arm64"]
+    },
     "icon": "../extension/media/atlas.ico"
   },
   "mac": {
@@ -26,5 +29,11 @@
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "icon": "../extension/media/leandix-icon.png",
+    "category": "Office",
+    "maintainer": "Leandix <info@leandix.com>"
   }
 }
