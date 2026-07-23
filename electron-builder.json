@@ -4,6 +4,12 @@
   "directories": {
     "output": "dist"
   },
+  "publish": {
+    "provider": "github",
+    "owner": "leandix-ai",
+    "repo": "app-builder",
+    "private": true
+  },
   "extraMetadata": {
     "main": "out/electron/main.js"
   },

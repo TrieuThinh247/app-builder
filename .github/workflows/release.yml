@@ -1,0 +1,104 @@
+name: Build & Release
+
+# Trigger khi push tag dạng v1.0.7
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # ─────────────────────────────────────────
+  # Windows build
+  # ─────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout app-builder
+        uses: actions/checkout@v4
+
+      - name: Checkout extension (private repo)
+        uses: actions/checkout@v4
+        with:
+          repository: leandix-ai/editor-extension
+          token: ${{ secrets.GH_TOKEN }}
+          path: extension
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build:electron
+
+      - name: Package & publish Windows installer
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: npx electron-builder --win --publish always
+
+  # ─────────────────────────────────────────
+  # macOS build
+  # ─────────────────────────────────────────
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout app-builder
+        uses: actions/checkout@v4
+
+      - name: Checkout extension (private repo)
+        uses: actions/checkout@v4
+        with:
+          repository: leandix-ai/editor-extension
+          token: ${{ secrets.GH_TOKEN }}
+          path: extension
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build:electron
+
+      - name: Package & publish macOS installer
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: npx electron-builder --mac --publish always
+
+  # ─────────────────────────────────────────
+  # Linux build
+  # ─────────────────────────────────────────
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout app-builder
+        uses: actions/checkout@v4
+
+      - name: Checkout extension (private repo)
+        uses: actions/checkout@v4
+        with:
+          repository: leandix-ai/editor-extension
+          token: ${{ secrets.GH_TOKEN }}
+          path: extension
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build:electron
+
+      - name: Package & publish Linux installer
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: npx electron-builder --linux --publish always
