@@ -19,6 +19,18 @@ contextBridge.exposeInMainWorld('homeApi', {
   openAtlasWeb: () => {
     ipcRenderer.send('home-action', { type: 'open-atlas-web' })
   },
+  /** Start network check before opening Atlas Web. Main process replies via onAtlasWebCheckResult. */
+  checkNetworkForAtlas: () => {
+    ipcRenderer.send('check-network-for-atlas')
+  },
+  /** Cancel an in-progress network check. */
+  cancelAtlasWebCheck: () => {
+    ipcRenderer.send('cancel-atlas-web-check')
+  },
+  /** Listen for the result of the Atlas Web network check. */
+  onAtlasWebCheckResult: (cb: (result: { status: 'online' | 'offline' | 'cancelled' }) => void) => {
+    ipcRenderer.once('atlas-web-check-result', (_event, result) => cb(result))
+  },
   onLanguage: (cb: (lang: string) => void) => {
     ipcRenderer.on('home-language', (_event, lang: string) => cb(lang))
   },

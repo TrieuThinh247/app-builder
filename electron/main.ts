@@ -222,9 +222,38 @@ function pushTabState(): void {
 // Window Creation
 // ---------------------------------------------------------------------------
 
+/** One-shot DNS check — resolves quickly (typically < 2s on healthy connections). */
 function checkNetwork(): Promise<boolean> {
   return new Promise((resolve) => {
     dns.lookup('atlas.leandix.com', (err) => resolve(!err))
+  })
+}
+
+/**
+ * Check network with a cancellable timeout.
+ * Returns a Promise that resolves to `true` (online), `false` (offline/timeout),
+ * or `'cancelled'` when the user hits Cancel.
+ * `onCancel` is called back with a cancel function so the caller can wire it to a button.
+ */
+function checkNetworkCancellable(
+  timeoutMs: number,
+  onCancel: (cancelFn: () => void) => void,
+): Promise<boolean | 'cancelled'> {
+  return new Promise((resolve) => {
+    let settled = false
+    function finish(result: boolean | 'cancelled') {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(result)
+    }
+
+    // Expose cancel to the caller
+    onCancel(() => finish('cancelled'))
+
+    const timer = setTimeout(() => finish(false), timeoutMs)
+
+    dns.lookup('atlas.leandix.com', (err) => finish(!err))
   })
 }
 
@@ -262,18 +291,9 @@ function createHomeWindow(): void {
   })
 
   homeWindow.webContents.once('did-finish-load', () => {
-    void checkNetwork().then((online) => {
-      homeWindow?.webContents.send('home-network-status', online)
-      homeWindow?.webContents.send('home-language', currentLanguage)
-      homeWindow?.webContents.send('home-theme', currentTheme)
-
-      // If offline, go straight to editor after brief delay so user sees the screen
-      if (!online) {
-        setTimeout(() => {
-          openEditorFromHome()
-        }, 1500)
-      }
-    })
+    // Send language and theme immediately — no network check needed at startup
+    homeWindow?.webContents.send('home-language', currentLanguage)
+    homeWindow?.webContents.send('home-theme', currentTheme)
   })
 
   homeWindow.on('closed', () => {
@@ -429,7 +449,7 @@ function createEditorTab(filePath?: string, templateId?: string): string {
       sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
       backgroundThrottling: false,  // keep rendering at full rate even when unfocused
-      spellChecker: true,           // enable native OS spell checker
+      spellcheck: true,           // enable native OS spell checker
     },
   })
   view.webContents.loadFile(path.join(__dirname, '..', 'webview', 'index.html'))
@@ -606,13 +626,7 @@ async function closeTab(tabId: string): Promise<void> {
     if (remaining.length > 0) {
       setActiveTab(remaining[remaining.length - 1])
     } else {
-      // No tabs left — go back to home screen
-      if (homeWindow && !homeWindow.isDestroyed()) {
-        homeWindow.show()
-        homeWindow.focus()
-      } else {
-        createHomeWindow()
-      }
+      // No tabs left — quit the app
       mainWindow?.destroy()
       return
     }
@@ -985,12 +999,10 @@ function createWindow(initialFilePath?: string): void {
   mainWindow.on('closed', () => {
     mainWindow = null
     tabBarView = null
-    // Re-open home if no other windows remain
-    if (!homeWindow || homeWindow.isDestroyed()) {
-      createHomeWindow()
-    } else {
-      homeWindow.show()
-      homeWindow.focus()
+    // Quit the app when the editor window is closed
+    if (!isQuitting) {
+      isQuitting = true
+      app.quit()
     }
   })
 }
@@ -1085,6 +1097,28 @@ function registerIpcHandlers(): void {
       // Rebuild native app menu
       createAppMenu()
     }
+  })
+
+  // Atlas Web: check network first (up to 5 min), with cancel support
+  // Sends back 'atlas-web-check-result' with { status: 'online' | 'offline' | 'cancelled' }
+  ipcMain.on('check-network-for-atlas', () => {
+    if (!homeWindow || homeWindow.isDestroyed()) return
+
+    const FIVE_MINUTES = 5 * 60 * 1000
+    void checkNetworkCancellable(FIVE_MINUTES, (cancelFn) => {
+      // Wire the cancel function so the renderer can trigger it
+      ipcMain.once('cancel-atlas-web-check', () => cancelFn())
+    }).then((result) => {
+      if (!homeWindow || homeWindow.isDestroyed()) return
+      if (result === 'cancelled') {
+        homeWindow.webContents.send('atlas-web-check-result', { status: 'cancelled' })
+      } else if (result === true) {
+        homeWindow.webContents.send('atlas-web-check-result', { status: 'online' })
+        openAtlasWebWindow()
+      } else {
+        homeWindow.webContents.send('atlas-web-check-result', { status: 'offline' })
+      }
+    })
   })
 
   ipcMain.on('vscode-message', (event, message) => {
@@ -1691,26 +1725,71 @@ async function handleDroppedFile(filePath: string): Promise<void> {
 
 let isQuitting = false
 
-// ── GPU / rendering flags ──────────────────────────────────────────────────
-// Must be called before app.whenReady() — these switches configure the
-// Chromium renderer process before it starts.
-app.commandLine.appendSwitch('enable-smooth-scrolling')
-app.commandLine.appendSwitch('enable-gpu-rasterization')   // rasterize on GPU
-app.commandLine.appendSwitch('enable-zero-copy')           // zero-copy texture upload
-app.commandLine.appendSwitch('disable-software-rasterizer') // force GPU path
-app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder,Vulkan,DefaultANGLEVulkan,VulkanFromANGLE')
+// ── GPU / rendering flags removed ─────────────────────────────────────────
 
-app.whenReady().then(() => {
-  registerIpcHandlers()
-  createHomeWindow()
+/**
+ * Extract a supported file path from argv.
+ * Electron passes the file as the last argument when launched via file association.
+ * In packaged builds argv[0] is the exe, argv[1] may be '--' or the file path.
+ * In dev builds argv[0] is electron, argv[1] is the entry script, argv[2]+ are extras.
+ */
+function getFileFromArgv(argv: string[]): string | null {
+  // Walk args in reverse, skip flags (starting with '-'), pick first real path
+  for (let i = argv.length - 1; i >= 1; i--) {
+    const arg = argv[i]
+    if (arg.startsWith('-')) continue
+    const lower = arg.toLowerCase()
+    if (lower.endsWith('.docx') || lower.endsWith('.pdf')) {
+      return arg
+    }
+  }
+  return null
+}
 
-  app.on('activate', () => {
-    // macOS: re-create window when dock icon is clicked and no windows exist
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createHomeWindow()
+// Single-instance lock: if another instance tries to open, forward its argv here
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  // Another instance is already running — it will receive 'second-instance' event
+  app.quit()
+} else {
+  app.on('second-instance', (_event, argv) => {
+    // A second instance was launched (e.g. user double-clicked another file)
+    const filePath = getFileFromArgv(argv)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      mainWindow.focus()
+      if (filePath) {
+        const ext = path.extname(filePath).toLowerCase()
+        if (ext === '.pdf') createPdfTab(filePath)
+        else createEditorTab(filePath)
+      }
+    } else if (filePath) {
+      openEditorFromHome(filePath)
+    } else {
+      // No file and no window open — just ignore, app is idle
     }
   })
-})
+
+  app.whenReady().then(() => {
+    registerIpcHandlers()
+
+    // Check if launched with a file argument (double-click / file association)
+    const initialFile = getFileFromArgv(process.argv)
+    if (initialFile) {
+      // Open directly to editor with the file, skip home screen
+      createWindow(initialFile)
+    } else {
+      createHomeWindow()
+    }
+
+    app.on('activate', () => {
+      // macOS: re-create window when dock icon is clicked and no windows exist
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createHomeWindow()
+      }
+    })
+  })
+}
 
 app.on('before-quit', (event) => {
   if (isQuitting) return
