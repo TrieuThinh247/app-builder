@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react'
 import { FileText, Globe, WifiOff, Loader, Plus, Clock, Settings, Moon, Sun, BookOpen, BarChart2, Mail, NotebookPen } from 'lucide-react'
 import logoUrl from '../logo/logo_final.png'
 
-type Screen = 'checking' | 'offline' | 'online' | 'editor-home'
 type Lang = 'vi' | 'en'
 type Theme = 'dark' | 'light'
+/** State of the Atlas Web connection check overlay */
+type AtlasCheckState = 'idle' | 'checking' | 'offline'
 
 interface RecentFile {
   filePath: string
@@ -21,6 +22,9 @@ declare global {
       openEditorWithFile: (filePath: string) => void
       openEditorFromTemplate: (templateId: string) => void
       openAtlasWeb: () => void
+      checkNetworkForAtlas: () => void
+      cancelAtlasWebCheck: () => void
+      onAtlasWebCheckResult: (cb: (result: { status: 'online' | 'offline' | 'cancelled' }) => void) => void
       onLanguage: (cb: (lang: string) => void) => void
       onTheme: (cb: (theme: string) => void) => void
       getSettings: () => Promise<{ language: Lang; theme: Theme }>
@@ -59,6 +63,12 @@ const STRINGS = {
     tplReport: 'Báo cáo',
     tplLetter: 'Thư / Đơn',
     tplNotes: 'Ghi chú',
+    atlasCheckingTitle: 'Đang kết nối Atlas Web...',
+    atlasCheckingDesc: 'Đang kiểm tra kết nối đến atlas.leandix.com',
+    atlasCancel: 'Hủy',
+    atlasOfflineTitle: 'Không có kết nối mạng',
+    atlasOfflineDesc: 'Không thể kết nối đến atlas.leandix.com. Vui lòng kiểm tra lại kết nối.',
+    atlasOfflineClose: 'Đóng',
   },
   en: {
     checking: 'Checking connection...',
@@ -86,6 +96,12 @@ const STRINGS = {
     tplReport: 'Report',
     tplLetter: 'Letter',
     tplNotes: 'Notes',
+    atlasCheckingTitle: 'Connecting to Atlas Web...',
+    atlasCheckingDesc: 'Checking connection to atlas.leandix.com',
+    atlasCancel: 'Cancel',
+    atlasOfflineTitle: 'No network connection',
+    atlasOfflineDesc: 'Unable to reach atlas.leandix.com. Please check your connection.',
+    atlasOfflineClose: 'Close',
   },
 }
 
@@ -221,6 +237,7 @@ function EditorHomeScreen({
 }) {
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([])
   const [loading, setLoading] = useState(true)
+  const [atlasCheck, setAtlasCheck] = useState<AtlasCheckState>('idle')
 
   useEffect(() => {
     window.homeApi.getRecentFiles().then((files) => {
@@ -229,17 +246,74 @@ function EditorHomeScreen({
     }).catch(() => setLoading(false))
   }, [])
 
+  function handleOpenAtlasWeb() {
+    setAtlasCheck('checking')
+    window.homeApi.onAtlasWebCheckResult((result) => {
+      if (result.status === 'online') {
+        // Atlas Web window opened by main process — just close overlay
+        setAtlasCheck('idle')
+      } else if (result.status === 'offline') {
+        setAtlasCheck('offline')
+      } else {
+        // cancelled by user
+        setAtlasCheck('idle')
+      }
+    })
+    window.homeApi.checkNetworkForAtlas()
+  }
+
+  function handleCancelAtlasCheck() {
+    window.homeApi.cancelAtlasWebCheck()
+    setAtlasCheck('idle')
+  }
+
   return (
     <div className="editor-home-root" data-theme={theme}>
+      {/* Atlas Web connection check overlay */}
+      {atlasCheck !== 'idle' && (
+        <div className="settings-overlay">
+          <div className="settings-modal atlas-check-modal">
+            {atlasCheck === 'checking' ? (
+              <>
+                <div className="atlas-check-icon"><Loader size={28} className="home-spin" /></div>
+                <div className="settings-modal-title">{s.atlasCheckingTitle}</div>
+                <p className="atlas-check-desc">{s.atlasCheckingDesc}</p>
+                <div className="settings-modal-actions">
+                  <button className="settings-btn-cancel" onClick={handleCancelAtlasCheck}>
+                    {s.atlasCancel}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="atlas-check-icon"><WifiOff size={28} /></div>
+                <div className="settings-modal-title">{s.atlasOfflineTitle}</div>
+                <p className="atlas-check-desc">{s.atlasOfflineDesc}</p>
+                <div className="settings-modal-actions">
+                  <button className="settings-btn-apply" onClick={() => setAtlasCheck('idle')}>
+                    {s.atlasOfflineClose}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="editor-home-header">
-        <button className="editor-home-back" onClick={onBack}>{s.back}</button>
         <span className="editor-home-brand">
           <img src={logoUrl} alt="Leandix Atlas" className="editor-home-brand-logo" />
           Leandix Atlas
         </span>
-        <button className="home-settings-btn editor-home-settings" onClick={onOpenSettings} title={s.settings}>
-          <Settings size={15} />
-        </button>
+        <div className="editor-home-header-actions">
+          <button className="editor-home-atlas-btn" onClick={handleOpenAtlasWeb} title={s.atlasDesc}>
+            <Globe size={15} style={{ marginRight: '0.4rem', verticalAlign: 'middle' }} />
+            {s.atlasTitle}
+          </button>
+          <button className="home-settings-btn editor-home-settings" onClick={onOpenSettings} title={s.settings}>
+            <Settings size={15} />
+          </button>
+        </div>
       </div>
 
       <div className="editor-home-body">
@@ -328,7 +402,6 @@ function EditorHomeScreen({
 }
 
 export default function HomeApp() {
-  const [screen, setScreen] = useState<Screen>('checking')
   const [lang, setLang] = useState<Lang>('vi')
   const [theme, setTheme] = useState<Theme>('dark')
   const [showSettings, setShowSettings] = useState(false)
@@ -347,9 +420,6 @@ export default function HomeApp() {
       setTheme(settings.theme)
     }).catch(() => {})
 
-    window.homeApi.onNetworkStatus((online) => {
-      setScreen(online ? 'online' : 'offline')
-    })
     window.homeApi.onLanguage((l) => {
       if (l === 'vi' || l === 'en') setLang(l)
     })
@@ -365,12 +435,6 @@ export default function HomeApp() {
     setShowSettings(false)
   }
 
-  const settingsBtn = (
-    <button className="home-settings-btn" onClick={() => setShowSettings(true)} title={s.settings}>
-      <Settings size={15} />
-    </button>
-  )
-
   const settingsModal = showSettings ? (
     <SettingsModal
       lang={lang}
@@ -380,90 +444,17 @@ export default function HomeApp() {
     />
   ) : null
 
-  if (screen === 'editor-home') {
-    return (
-      <>
-        {settingsModal}
-        <EditorHomeScreen
-          lang={lang}
-          theme={theme}
-          s={s}
-          onBack={() => setScreen('online')}
-          onOpenSettings={() => setShowSettings(true)}
-        />
-      </>
-    )
-  }
-
-  if (screen === 'checking') {
-    return (
-      <div className="home-root">
-        {settingsBtn}
-        {settingsModal}
-        <div className="home-logo">
-          <img src={logoUrl} alt="" className="home-logo-image" />
-          <span className="home-logo-text">Leandix Atlas</span>
-        </div>
-        <div className="home-status">
-          <Loader size={18} className="home-spin" />
-          <span>{s.checking}</span>
-        </div>
-      </div>
-    )
-  }
-
-  if (screen === 'offline') {
-    return (
-      <div className="home-root">
-        {settingsBtn}
-        {settingsModal}
-        <div className="home-logo">
-          <img src={logoUrl} alt="" className="home-logo-image" />
-          <span className="home-logo-text">Leandix Atlas</span>
-        </div>
-        <div className="home-status offline">
-          <WifiOff size={16} />
-          <span>{s.offline}</span>
-        </div>
-        <div className="home-actions">
-          <button className="home-btn home-btn-primary" onClick={() => window.homeApi.openEditor()}>
-            <FileText size={22} className="home-btn-icon" />
-            <div className="home-btn-content">
-              <span className="home-btn-title">{s.editorTitle}</span>
-              <span className="home-btn-desc">{s.editorDesc}</span>
-            </div>
-          </button>
-        </div>
-        <p className="home-note">{s.offlineNote}</p>
-      </div>
-    )
-  }
-
+  // Always open directly to the editor home screen
   return (
-    <div className="home-root">
-      {settingsBtn}
+    <>
       {settingsModal}
-      <div className="home-logo">
-        <img src={logoUrl} alt="" className="home-logo-image" />
-        <span className="home-logo-text">Leandix Atlas</span>
-      </div>
-      <p className="home-subtitle">{s.subtitle}</p>
-      <div className="home-actions">
-        <button className="home-btn home-btn-primary" onClick={() => setScreen('editor-home')}>
-          <FileText size={22} className="home-btn-icon" />
-          <div className="home-btn-content">
-            <span className="home-btn-title">{s.editorTitle}</span>
-            <span className="home-btn-desc">{s.editorDesc}</span>
-          </div>
-        </button>
-        <button className="home-btn home-btn-secondary" onClick={() => window.homeApi.openAtlasWeb()}>
-          <Globe size={22} className="home-btn-icon" />
-          <div className="home-btn-content">
-            <span className="home-btn-title">{s.atlasTitle}</span>
-            <span className="home-btn-desc">{s.atlasDesc}</span>
-          </div>
-        </button>
-      </div>
-    </div>
+      <EditorHomeScreen
+        lang={lang}
+        theme={theme}
+        s={s}
+        onBack={() => {}}
+        onOpenSettings={() => setShowSettings(true)}
+      />
+    </>
   )
 }

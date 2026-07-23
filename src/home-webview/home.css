@@ -647,3 +647,71 @@ body {
   text-align: center;
   line-height: 1.2;
 }
+
+/* ---------------------------------------------------------------------------
+   Editor Home Header — Atlas Web button & actions group
+   ---------------------------------------------------------------------- */
+
+.editor-home-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.editor-home-atlas-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.75rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--eh-border);
+  background: transparent;
+  color: var(--eh-text-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.editor-home-atlas-btn:hover {
+  background: var(--eh-new-hover-bg);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+/* override: settings button inside header should not be fixed */
+.editor-home-settings {
+  position: static !important;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+.editor-home-settings:hover {
+  background: var(--eh-bg-thumb) !important;
+  border-color: var(--eh-border) !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Atlas Web connection check overlay (inside settings-overlay)
+   ---------------------------------------------------------------------- */
+
+.atlas-check-modal {
+  text-align: center;
+  align-items: center;
+  width: 340px;
+}
+
+.atlas-check-icon {
+  color: var(--accent-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.25rem;
+}
+
+.atlas-check-desc {
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-top: -0.5rem;
+}

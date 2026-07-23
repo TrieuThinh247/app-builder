@@ -15,6 +15,20 @@
     "out/pdfjs/**/*",
     "out/tab-bar/**/*"
   ],
+  "fileAssociations": [
+    {
+      "ext": "docx",
+      "name": "Word Document",
+      "description": "Open with Leandix Atlas",
+      "role": "Editor"
+    },
+    {
+      "ext": "pdf",
+      "name": "PDF Document",
+      "description": "Open with Leandix Atlas",
+      "role": "Viewer"
+    }
+  ],
   "win": {
     "target": {
       "target": "nsis",
