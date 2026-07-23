@@ -7,9 +7,29 @@ on:
 
 jobs:
   # ─────────────────────────────────────────
+  # Tạo GitHub Release trước, 3 job build sẽ upload vào đây
+  # ─────────────────────────────────────────
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: ${{ github.ref_name }}
+          draft: true
+          prerelease: false
+
+  # ─────────────────────────────────────────
   # Windows build
   # ─────────────────────────────────────────
   build-windows:
+    needs: create-release
     runs-on: windows-latest
     steps:
       - name: Checkout app-builder
@@ -27,7 +47,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install app-builder dependencies
         working-directory: app-builder
@@ -51,6 +71,7 @@ jobs:
   # macOS build
   # ─────────────────────────────────────────
   build-mac:
+    needs: create-release
     runs-on: macos-latest
     steps:
       - name: Checkout app-builder
@@ -68,7 +89,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install app-builder dependencies
         working-directory: app-builder
@@ -92,6 +113,7 @@ jobs:
   # Linux build
   # ─────────────────────────────────────────
   build-linux:
+    needs: create-release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout app-builder
@@ -109,7 +131,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install app-builder dependencies
         working-directory: app-builder
