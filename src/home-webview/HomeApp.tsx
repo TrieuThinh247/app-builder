@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { FileText, Globe, WifiOff, Loader, Plus, Clock, Settings, Moon, Sun, BookOpen, BarChart2, Mail, NotebookPen } from 'lucide-react'
+import { FileText, Globe, WifiOff, Loader, Plus, Clock, Settings, Moon, Sun, BookOpen, BarChart2, Mail, NotebookPen, HelpCircle, Download, RefreshCw, X } from 'lucide-react'
 import logoUrl from '../logo/logo_final.png'
 
 type Lang = 'vi' | 'en'
@@ -32,6 +32,16 @@ declare global {
       openFileDialog: () => Promise<string | null>
       openPdfDialog: () => Promise<string | null>
       getRecentFiles: () => Promise<RecentFile[]>
+      // Auto updater
+      getPendingUpdate: () => Promise<{ version: string } | null>
+      checkForUpdate: () => void
+      downloadUpdate: () => void
+      installUpdate: () => void
+      onUpdateAvailable: (cb: (info: { version: string }) => void) => void
+      onUpdateNotAvailable: (cb: () => void) => void
+      onUpdateDownloadProgress: (cb: (progress: { percent: number; transferred: number; total: number }) => void) => void
+      onUpdateDownloaded: (cb: () => void) => void
+      onUpdateError: (cb: (err: { message: string }) => void) => void
     }
   }
 }
@@ -150,17 +160,108 @@ function PdfIcon() {
   )
 }
 
+function AboutModal({ lang, onClose }: { lang: Lang; onClose: () => void }) {
+  function handleOverlayClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (e.target === e.currentTarget) onClose()
+  }
+
+  return (
+    <div className="settings-overlay" onClick={handleOverlayClick}>
+      <div className="settings-modal about-modal">
+        {/* Logo + app name */}
+        <div className="about-header">
+          <img src={logoUrl} alt="Leandix Atlas" className="about-logo" />
+          <div>
+            <div className="about-app-name">Leandix Atlas</div>
+            <div className="about-version">v1.0.6</div>
+          </div>
+        </div>
+
+        <div className="about-divider" />
+
+        {/* Contact */}
+        <div className="about-contact-row">
+          <Mail size={15} className="about-contact-icon" />
+          <div className="about-contact-info">
+            <span className="about-contact-label">
+              {lang === 'vi' ? 'Liên hệ hỗ trợ' : 'Support contact'}
+            </span>
+            <a href="mailto:atlas@leandix.vn" className="about-contact-email">
+              atlas@leandix.vn
+            </a>
+          </div>
+        </div>
+
+        <div className="about-divider" />
+
+        {/* Credits */}
+        <div className="about-credits">
+          <div className="about-company">Công Ty TNHH LEANDIX</div>
+          <div className="about-team-label">
+            {lang === 'vi' ? 'Đội ngũ phát triển' : 'Development team'}: Team Atlas
+          </div>
+          <div className="about-team-members">
+            <span>Tạ Ngọc Nam</span>
+            <span>Thịnh Hải Triều</span>
+          </div>
+        </div>
+
+        <div className="settings-modal-actions">
+          <button className="settings-btn-apply" onClick={onClose}>
+            {lang === 'vi' ? 'Đóng' : 'Close'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 interface SettingsModalProps {
   lang: Lang
   theme: Theme
   onClose: () => void
   onApply: (lang: Lang, theme: Theme) => void
+  pendingUpdate: string | null
 }
 
-function SettingsModal({ lang, theme, onClose, onApply }: SettingsModalProps) {
+type UpdateState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error' | 'up-to-date'
+
+function SettingsModal({ lang, theme, onClose, onApply, pendingUpdate }: SettingsModalProps) {
   const [draftLang, setDraftLang] = useState<Lang>(lang)
   const [draftTheme, setDraftTheme] = useState<Theme>(theme)
+  const [updateState, setUpdateState] = useState<UpdateState>(pendingUpdate ? 'available' : 'idle')
+  const [updateVersion, setUpdateVersion] = useState<string | null>(pendingUpdate)
+  const [downloadPercent, setDownloadPercent] = useState(0)
+  const [updateErrorMsg, setUpdateErrorMsg] = useState('')
   const s = STRINGS[lang]
+
+  // Register update listeners when modal opens
+  useEffect(() => {
+    // Nếu không có pending update, tự check lại khi mở Settings
+    if (!pendingUpdate) {
+      setUpdateState('checking')
+      window.homeApi.checkForUpdate()
+    }
+
+    window.homeApi.onUpdateAvailable((info) => {
+      setUpdateVersion(info.version)
+      setUpdateState('available')
+    })
+    window.homeApi.onUpdateNotAvailable(() => {
+      setUpdateState('up-to-date')
+    })
+    window.homeApi.onUpdateDownloadProgress((progress) => {
+      setDownloadPercent(progress.percent)
+      setUpdateState('downloading')
+    })
+    window.homeApi.onUpdateDownloaded(() => {
+      setUpdateState('downloaded')
+    })
+    window.homeApi.onUpdateError((err) => {
+      setUpdateErrorMsg(err.message)
+      setUpdateState('error')
+    })
+  }, [])
 
   function handleApply() {
     onApply(draftLang, draftTheme)
@@ -213,6 +314,77 @@ function SettingsModal({ lang, theme, onClose, onApply }: SettingsModalProps) {
           </div>
         </div>
 
+        {/* ── Update section ── */}
+        <div className="settings-update-section">
+          <div className="settings-label" style={{ marginBottom: '0.5rem' }}>
+            {lang === 'vi' ? 'Cập nhật' : 'Updates'}
+          </div>
+
+          {updateState === 'idle' && (
+            <button className="settings-update-check-btn" onClick={() => {
+              setUpdateState('checking')
+              window.homeApi.checkForUpdate()
+            }}>
+              <RefreshCw size={13} style={{ marginRight: '0.4rem' }} />
+              {lang === 'vi' ? 'Kiểm tra cập nhật' : 'Check for updates'}
+            </button>
+          )}
+
+          {updateState === 'checking' && (
+            <div className="settings-update-status">
+              <Loader size={13} className="home-spin" style={{ marginRight: '0.4rem' }} />
+              {lang === 'vi' ? 'Đang kiểm tra...' : 'Checking...'}
+            </div>
+          )}
+
+          {updateState === 'up-to-date' && (
+            <div className="settings-update-status settings-update-ok">
+              {lang === 'vi' ? '✓ Bạn đang dùng phiên bản mới nhất' : '✓ You are on the latest version'}
+            </div>
+          )}
+
+          {updateState === 'available' && (
+            <div className="settings-update-available">
+              <span className="settings-update-available-text">
+                {lang === 'vi' ? `Có phiên bản mới: v${updateVersion}` : `New version available: v${updateVersion}`}
+              </span>
+              <button className="settings-btn-apply settings-update-dl-btn" onClick={() => {
+                window.homeApi.downloadUpdate()
+                setUpdateState('downloading')
+              }}>
+                <Download size={13} style={{ marginRight: '0.4rem' }} />
+                {lang === 'vi' ? 'Tải về' : 'Download'}
+              </button>
+            </div>
+          )}
+
+          {updateState === 'downloading' && (
+            <div className="settings-update-progress">
+              <div className="settings-update-progress-bar">
+                <div className="settings-update-progress-fill" style={{ width: `${downloadPercent}%` }} />
+              </div>
+              <span className="settings-update-progress-text">{downloadPercent}%</span>
+            </div>
+          )}
+
+          {updateState === 'downloaded' && (
+            <div className="settings-update-available">
+              <span className="settings-update-available-text">
+                {lang === 'vi' ? 'Đã tải xong — khởi động lại để cài đặt' : 'Downloaded — restart to install'}
+              </span>
+              <button className="settings-btn-apply settings-update-dl-btn" onClick={() => window.homeApi.installUpdate()}>
+                {lang === 'vi' ? 'Khởi động lại' : 'Restart & Install'}
+              </button>
+            </div>
+          )}
+
+          {updateState === 'error' && (
+            <div className="settings-update-status settings-update-error">
+              {lang === 'vi' ? `Lỗi: ${updateErrorMsg || 'Không thể kiểm tra cập nhật'}` : `Error: ${updateErrorMsg || 'Could not check for updates'}`}
+            </div>
+          )}
+        </div>
+
         <div className="settings-modal-actions">
           <button className="settings-btn-cancel" onClick={onClose}>{s.settingsCancel}</button>
           <button className="settings-btn-apply" onClick={handleApply}>{s.settingsApply}</button>
@@ -233,11 +405,24 @@ function EditorHomeScreen({
   theme: Theme
   s: typeof STRINGS['vi']
   onBack: () => void
-  onOpenSettings: () => void
+  onOpenSettings: (pendingUpdate: string | null) => void
 }) {
   const [recentFiles, setRecentFiles] = useState<RecentFile[]>([])
   const [loading, setLoading] = useState(true)
   const [atlasCheck, setAtlasCheck] = useState<AtlasCheckState>('idle')
+  const [showAbout, setShowAbout] = useState(false)
+  const [updateToast, setUpdateToast] = useState<string | null>(null) // version string nếu có update
+
+  // Listen for update events from main process
+  useEffect(() => {
+    window.homeApi.onUpdateAvailable((info) => {
+      setUpdateToast(info.version)
+    })
+    // Check if there's already a pending update (e.g. re-render after settings close)
+    window.homeApi.getPendingUpdate().then((info) => {
+      if (info) setUpdateToast(info.version)
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     window.homeApi.getRecentFiles().then((files) => {
@@ -269,6 +454,23 @@ function EditorHomeScreen({
 
   return (
     <div className="editor-home-root" data-theme={theme}>
+      {showAbout && <AboutModal lang={lang} onClose={() => setShowAbout(false)} />}
+
+      {/* Update toast notification */}
+      {updateToast && (
+        <div className="update-toast">
+          <Download size={15} className="update-toast-icon" />
+          <span className="update-toast-text">
+            {lang === 'vi'
+              ? `Có bản cập nhật mới v${updateToast} — Vào Cài đặt để tải về`
+              : `Update v${updateToast} available — Go to Settings to download`}
+          </span>
+          <button className="update-toast-close" onClick={() => setUpdateToast(null)} title="Đóng">
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
       {/* Atlas Web connection check overlay */}
       {atlasCheck !== 'idle' && (
         <div className="settings-overlay">
@@ -310,7 +512,10 @@ function EditorHomeScreen({
             <Globe size={15} style={{ marginRight: '0.4rem', verticalAlign: 'middle' }} />
             {s.atlasTitle}
           </button>
-          <button className="home-settings-btn editor-home-settings" onClick={onOpenSettings} title={s.settings}>
+          <button className="home-settings-btn editor-home-settings" onClick={() => setShowAbout(true)} title={lang === 'vi' ? 'Giới thiệu' : 'About'}>
+            <HelpCircle size={15} />
+          </button>
+          <button className="home-settings-btn editor-home-settings" onClick={() => onOpenSettings(updateToast)} title={s.settings}>
             <Settings size={15} />
           </button>
         </div>
@@ -405,6 +610,7 @@ export default function HomeApp() {
   const [lang, setLang] = useState<Lang>('vi')
   const [theme, setTheme] = useState<Theme>('dark')
   const [showSettings, setShowSettings] = useState(false)
+  const [pendingUpdate, setPendingUpdate] = useState<string | null>(null)
 
   const s = STRINGS[lang]
 
@@ -441,6 +647,7 @@ export default function HomeApp() {
       theme={theme}
       onClose={() => setShowSettings(false)}
       onApply={handleApplySettings}
+      pendingUpdate={pendingUpdate}
     />
   ) : null
 
@@ -453,7 +660,10 @@ export default function HomeApp() {
         theme={theme}
         s={s}
         onBack={() => {}}
-        onOpenSettings={() => setShowSettings(true)}
+        onOpenSettings={(update) => {
+          setPendingUpdate(update)
+          setShowSettings(true)
+        }}
       />
     </>
   )

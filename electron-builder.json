@@ -7,8 +7,7 @@
   "publish": {
     "provider": "github",
     "owner": "leandix-ai",
-    "repo": "app-builder",
-    "private": true
+    "repo": "app-builder"
   },
   "extraMetadata": {
     "main": "out/electron/main.js"
@@ -54,7 +53,7 @@
   },
   "linux": {
     "target": ["AppImage", "deb"],
-    "icon": "../extension/media/leandix-icon.png",
+    "icon": "../extension/media/bw.png",
     "category": "Office",
     "maintainer": "Leandix <info@leandix.com>"
   }

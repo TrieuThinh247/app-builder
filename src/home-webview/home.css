@@ -715,3 +715,261 @@ body {
   line-height: 1.5;
   margin-top: -0.5rem;
 }
+
+/* ---------------------------------------------------------------------------
+   About modal
+   ---------------------------------------------------------------------- */
+
+.about-modal {
+  width: 300px;
+  gap: 1rem;
+}
+
+.about-header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.about-logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.about-app-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.about-version {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  margin-top: 0.1rem;
+}
+
+.about-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0 -0.25rem;
+}
+
+.about-contact-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.about-contact-icon {
+  color: var(--accent-blue);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.about-contact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.about-contact-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.about-contact-email {
+  font-size: 0.85rem;
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.about-contact-email:hover {
+  text-decoration: underline;
+}
+
+.about-credits {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.about-company {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.about-team-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.about-team-members {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+  margin-top: 0.15rem;
+}
+
+.about-team-members span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------------
+   Update toast notification (slide-in from bottom)
+   ---------------------------------------------------------------------- */
+
+.update-toast {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1rem;
+  background: var(--accent-blue);
+  color: #fff;
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  z-index: 300;
+  animation: toast-slide-in 0.3s ease;
+  max-width: 480px;
+  white-space: nowrap;
+}
+
+@keyframes toast-slide-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.update-toast-icon {
+  flex-shrink: 0;
+}
+
+.update-toast-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.update-toast-close {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.8);
+  cursor: pointer;
+  padding: 0.1rem;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: 0.25rem;
+  transition: color 0.15s;
+}
+
+.update-toast-close:hover {
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Settings modal — update section
+   ---------------------------------------------------------------------- */
+
+.settings-update-section {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.settings-update-check-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.settings-update-check-btn:hover {
+  background: var(--bg-surface2);
+  border-color: var(--accent-blue);
+  color: var(--text-primary);
+}
+
+.settings-update-status {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.settings-update-ok {
+  color: #22c55e;
+}
+
+.settings-update-error {
+  color: #f87171;
+}
+
+.settings-update-available {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.settings-update-available-text {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  font-weight: 500;
+  flex: 1;
+}
+
+.settings-update-dl-btn {
+  padding: 0.4rem 0.85rem !important;
+  font-size: 0.8rem !important;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.settings-update-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.settings-update-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.settings-update-progress-fill {
+  height: 100%;
+  background: var(--accent-blue);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.settings-update-progress-text {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-width: 2.5rem;
+  text-align: right;
+}

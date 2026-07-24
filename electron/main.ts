@@ -5,6 +5,7 @@ import * as fsSync from 'fs'
 import * as os from 'os'
 import * as dns from 'dns'
 import { execFile } from 'child_process'
+import { autoUpdater } from 'electron-updater'
 import { parseDocx } from '../../extension/src/extension/DocxParser'
 import { serializeToDocx } from '../../extension/src/extension/DocxSerializer'
 import { DEFAULT_PAGE_SETTINGS } from '../../extension/src/shared/constants'
@@ -294,6 +295,11 @@ function createHomeWindow(): void {
     // Send language and theme immediately — no network check needed at startup
     homeWindow?.webContents.send('home-language', currentLanguage)
     homeWindow?.webContents.send('home-theme', currentTheme)
+
+    // Delay nhỏ để renderer kịp mount và đăng ký IPC listeners
+    setTimeout(() => {
+      void autoUpdater.checkForUpdates()
+    }, 2000)
   })
 
   homeWindow.on('closed', () => {
@@ -1155,6 +1161,26 @@ function registerIpcHandlers(): void {
     if (typeof filePath !== 'string' || !isSupportedDroppedFile(filePath)) return
     void handleDroppedFile(filePath)
   })
+
+  // ── Auto Updater IPC ──────────────────────────────────────────────────────
+
+  // Renderer asks: is there a pending update?
+  ipcMain.handle('update-get-pending', () => pendingUpdateInfo)
+
+  // Renderer triggers manual check
+  ipcMain.on('update-check', () => {
+    void autoUpdater.checkForUpdates()
+  })
+
+  // Renderer triggers download
+  ipcMain.on('update-download', () => {
+    void autoUpdater.downloadUpdate()
+  })
+
+  // Renderer triggers restart & install
+  ipcMain.on('update-install', () => {
+    autoUpdater.quitAndInstall()
+  })
 }
 
 
@@ -1701,6 +1727,61 @@ async function handleDroppedFile(filePath: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Auto Updater
+// ---------------------------------------------------------------------------
+
+/** Cached update info if a new version is available */
+let pendingUpdateInfo: { version: string } | null = null
+
+function setupAutoUpdater(): void {
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = false
+
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[updater] checking-for-update')
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    pendingUpdateInfo = { version: info.version }
+    // Notify home window if it's open
+    if (homeWindow && !homeWindow.isDestroyed()) {
+      homeWindow.webContents.send('update-available', { version: info.version })
+    }
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    pendingUpdateInfo = null
+    if (homeWindow && !homeWindow.isDestroyed()) {
+      homeWindow.webContents.send('update-not-available')
+    }
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    if (homeWindow && !homeWindow.isDestroyed()) {
+      homeWindow.webContents.send('update-download-progress', {
+        percent: Math.round(progress.percent),
+        transferred: progress.transferred,
+        total: progress.total,
+      })
+    }
+  })
+
+  autoUpdater.on('update-downloaded', () => {
+    if (homeWindow && !homeWindow.isDestroyed()) {
+      homeWindow.webContents.send('update-downloaded')
+    }
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.error('[updater] error:', err.message, err.stack)
+    const msg = err.message + (err.stack ? '\n' + err.stack : '')
+    if (homeWindow && !homeWindow.isDestroyed()) {
+      homeWindow.webContents.send('update-error', { message: msg })
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
 // App Lifecycle
 // ---------------------------------------------------------------------------
 
@@ -1752,6 +1833,7 @@ if (!gotLock) {
   })
 
   app.whenReady().then(() => {
+    setupAutoUpdater()
     registerIpcHandlers()
 
     // Check if launched with a file argument (double-click / file association)
