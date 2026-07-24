@@ -27,6 +27,9 @@ export default defineConfig({
     },
   },
   resolve: {
+    // Force vite to resolve node_modules từ app-builder thay vì từ extension root
+    // Cần thiết khi vite root nằm ngoài folder chứa node_modules
+    modules: [path.resolve(__dirname, 'node_modules'), 'node_modules'],
     alias: {
       '@': path.resolve(extensionRoot, 'src/webview'),
     },

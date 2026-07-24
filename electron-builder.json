@@ -4,6 +4,11 @@
   "directories": {
     "output": "dist"
   },
+  "publish": {
+    "provider": "github",
+    "owner": "leandix-ai",
+    "repo": "app-builder"
+  },
   "extraMetadata": {
     "main": "out/electron/main.js"
   },
@@ -37,7 +42,9 @@
     "icon": "../extension/media/atlas.ico"
   },
   "mac": {
-    "target": "dmg",
+    "target": [
+      { "target": "dmg", "arch": ["x64", "arm64"] }
+    ],
     "icon": "../extension/media/atlas-mac.png"
   },
   "nsis": {
@@ -46,7 +53,7 @@
   },
   "linux": {
     "target": ["AppImage", "deb"],
-    "icon": "../extension/media/leandix-icon.png",
+    "icon": "../extension/media/bw.png",
     "category": "Office",
     "maintainer": "Leandix <info@leandix.com>"
   }

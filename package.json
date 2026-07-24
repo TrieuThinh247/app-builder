@@ -3,12 +3,12 @@
   "displayName": "Leandix Atlas",
   "description": "A block-based rich text editor for .docx files, powered by Tiptap",
   "publisher": "leandix",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "license": "MIT",
   "main": "./out/electron/main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/leandix-ai/editor-extension.git"
+    "url": "https://github.com/leandix-ai/app-builder.git"
   },
   "scripts": {
     "build:webview": "vite build --config vite.config-electron.ts",
@@ -27,6 +27,7 @@
     "docx": "^9.0.2",
     "dom-serializer": "^2.0.0",
     "domutils": "^3.1.0",
+    "electron-updater": "^6.3.0",
     "htmlparser2": "^9.1.0",
     "jszip": "^3.10.1",
     "lucide-react": "^1.24.0",

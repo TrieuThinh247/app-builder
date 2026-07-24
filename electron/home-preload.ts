@@ -52,4 +52,33 @@ contextBridge.exposeInMainWorld('homeApi', {
   getRecentFiles: (): Promise<Array<{ filePath: string; title: string; lastOpenedAt: string }>> => {
     return ipcRenderer.invoke('get-recent-files')
   },
+
+  // ── Auto Updater ──────────────────────────────────────────────────────────
+  getPendingUpdate: (): Promise<{ version: string } | null> => {
+    return ipcRenderer.invoke('update-get-pending')
+  },
+  checkForUpdate: () => {
+    ipcRenderer.send('update-check')
+  },
+  downloadUpdate: () => {
+    ipcRenderer.send('update-download')
+  },
+  installUpdate: () => {
+    ipcRenderer.send('update-install')
+  },
+  onUpdateAvailable: (cb: (info: { version: string }) => void) => {
+    ipcRenderer.on('update-available', (_event, info) => cb(info))
+  },
+  onUpdateNotAvailable: (cb: () => void) => {
+    ipcRenderer.on('update-not-available', () => cb())
+  },
+  onUpdateDownloadProgress: (cb: (progress: { percent: number; transferred: number; total: number }) => void) => {
+    ipcRenderer.on('update-download-progress', (_event, progress) => cb(progress))
+  },
+  onUpdateDownloaded: (cb: () => void) => {
+    ipcRenderer.on('update-downloaded', () => cb())
+  },
+  onUpdateError: (cb: (err: { message: string }) => void) => {
+    ipcRenderer.on('update-error', (_event, err) => cb(err))
+  },
 })
